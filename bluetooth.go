@@ -45,20 +45,18 @@ func pollSpeakerStatus(stop <-chan struct{}) {
 	}
 }
 
-var rainbowColors = []uint8{5, 9, 13, 21, 45, 49, 53}
-
 func startRainbow(pad uint8) chan struct{} {
 	stop := make(chan struct{})
 	go func() {
-		i := 0
+		color := uint8(0)
 		for {
 			select {
 			case <-stop:
 				return
 			default:
-				setPadColor(pad, rainbowColors[i%len(rainbowColors)])
-				i++
-				time.Sleep(200 * time.Millisecond)
+				setPadColor(pad, color)
+				color = (color + 1) % 128
+				time.Sleep(80 * time.Millisecond)
 			}
 		}
 	}()
