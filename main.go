@@ -84,16 +84,27 @@ type bulbState struct {
 	brightness uint8
 }
 
-func discoverKasa() map[string]bulbState {
+func discoverKasa(retries int) map[string]bulbState {
 	fmt.Println("Discovering Kasa devices...")
-	devices, err := kasa.BroadcastDiscovery(3, 1)
-	if err != nil {
-		fmt.Printf("Kasa discovery error: %s\n", err)
-		return nil
+
+	var devices map[string]*kasa.Sysinfo
+	for attempt := 1; attempt <= retries; attempt++ {
+		var err error
+		devices, err = kasa.BroadcastDiscovery(3, 1)
+		if err != nil {
+			fmt.Printf("Kasa discovery error (attempt %d): %s\n", attempt, err)
+			continue
+		}
+		if len(devices) > 0 {
+			break
+		}
+		fmt.Printf("No devices found (attempt %d/%d), retrying...\n", attempt, retries)
+		time.Sleep(2 * time.Second)
 	}
+
 	fmt.Printf("Found %d Kasa device(s):\n", len(devices))
 
-	bulbs := make(map[string]bulbState)
+	result := make(map[string]bulbState)
 	for ip, info := range devices {
 		if info.Alias == "" {
 			fmt.Printf("  %s: unknown device (model=%q), skipping\n", ip, info.Model)
@@ -116,7 +127,7 @@ func discoverKasa() map[string]bulbState {
 		fmt.Printf("    state=%s  brightness=%d%%  hue=%d  saturation=%d  colorTemp=%d\n",
 			state, ls.Brightness, ls.Hue, ls.Saturation, ls.ColorTemp)
 
-		bulbs[info.Alias] = bulbState{
+		result[info.Alias] = bulbState{
 			alias:      info.Alias,
 			ip:         ip,
 			on:         on,
@@ -124,7 +135,7 @@ func discoverKasa() map[string]bulbState {
 		}
 	}
 	fmt.Println()
-	return bulbs
+	return result
 }
 
 func lampPadColor(on bool) uint8 {
@@ -159,8 +170,19 @@ func toggleLamp(alias string, pad uint8) {
 
 	b, ok := bulbs[alias]
 	if !ok {
-		fmt.Printf("lamp %q not found, cannot toggle\n", alias)
-		return
+		fmt.Printf("lamp %q not found, re-discovering...\n", alias)
+		mu.Unlock()
+		fresh := discoverKasa(1)
+		mu.Lock()
+		for k, v := range fresh {
+			bulbs[k] = v
+		}
+		b, ok = bulbs[alias]
+		if !ok {
+			fmt.Printf("lamp %q still not found after re-discovery\n", alias)
+			return
+		}
+		updateLampPads(bulbs)
 	}
 
 	newState := !b.on
@@ -285,7 +307,7 @@ func handleMIDI(msg midi.Message, timestampms int32) {
 func main() {
 	defer midi.CloseDriver()
 
-	bulbs = discoverKasa()
+	bulbs = discoverKasa(3)
 
 	fmt.Println("Available MIDI input ports:")
 	fmt.Println(midi.GetInPorts())
