@@ -88,6 +88,35 @@ func updateLampPads(bulbs map[string]bulbState) {
 	}
 }
 
+func pollLampStatus(stop <-chan struct{}) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+			for _, kb := range knownBulbs {
+				ls, err := queryLightState(kb.ip)
+				if err != nil {
+					continue
+				}
+				on := ls.OnOff == 1
+				mu.Lock()
+				b := bulbs[kb.alias]
+				b.on = on
+				b.brightness = ls.Brightness
+				bulbs[kb.alias] = b
+				mu.Unlock()
+			}
+			mu.Lock()
+			updateLampPads(bulbs)
+			mu.Unlock()
+		}
+	}
+}
+
 func toggleLamp(alias string, pad uint8) {
 	mu.Lock()
 	defer mu.Unlock()
