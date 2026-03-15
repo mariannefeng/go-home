@@ -62,7 +62,14 @@ func exitDAWMode() {
 	}
 }
 
-func discoverKasa() map[string]*kasa.Sysinfo {
+type bulbState struct {
+	alias      string
+	ip         string
+	on         bool
+	brightness uint8
+}
+
+func discoverKasa() map[string]bulbState {
 	fmt.Println("Discovering Kasa devices...")
 	devices, err := kasa.BroadcastDiscovery(3, 1)
 	if err != nil {
@@ -70,59 +77,58 @@ func discoverKasa() map[string]*kasa.Sysinfo {
 		return nil
 	}
 	fmt.Printf("Found %d Kasa device(s):\n", len(devices))
-	for ip, info := range devices {
-		fmt.Printf("  %s: %+v\n", ip, *info)
-	}
 
-	fmt.Println("\nQuerying each device individually...")
-	for ip := range devices {
-		dev, err := kasa.NewDevice(ip)
-		if err != nil {
-			fmt.Printf("  %s: error creating device: %s\n", ip, err)
+	bulbs := make(map[string]bulbState)
+	for ip, info := range devices {
+		if info.Alias == "" {
+			fmt.Printf("  %s: unknown device (model=%q), skipping\n", ip, info.Model)
 			continue
 		}
-		settings, err := dev.GetSettings()
+
+		fmt.Printf("  %s: %s [%s]\n", ip, info.Alias, info.Model)
+
+		ls, err := queryLightState(ip)
 		if err != nil {
-			fmt.Printf("  %s: error getting settings: %s\n", ip, err)
+			fmt.Printf("    light state error: %s\n", err)
 			continue
 		}
-		fmt.Printf("  %s: %+v\n", ip, *settings)
+
+		on := ls.OnOff == 1
+		state := "OFF"
+		if on {
+			state = "ON"
+		}
+		fmt.Printf("    state=%s  brightness=%d%%  hue=%d  saturation=%d  colorTemp=%d\n",
+			state, ls.Brightness, ls.Hue, ls.Saturation, ls.ColorTemp)
+
+		bulbs[info.Alias] = bulbState{
+			alias:      info.Alias,
+			ip:         ip,
+			on:         on,
+			brightness: ls.Brightness,
+		}
 	}
 	fmt.Println()
-	return devices
+	return bulbs
 }
 
-func updateLampPads(devices map[string]*kasa.Sysinfo) {
-	if devices == nil {
-		setPadColor(padFlowerLamp, colorRed)
-		setPadColor(padMushroomLamp, colorRed)
-		return
+func lampPadColor(on bool) uint8 {
+	if on {
+		return colorGreen
 	}
+	return colorRed
+}
 
-	flowerFound, mushroomFound := false, false
-	for _, info := range devices {
-		switch info.Alias {
-		case FLOWER_LAMP:
-			flowerFound = true
-			if info.RelayState == 1 {
-				setPadColor(padFlowerLamp, colorGreen)
-			} else {
-				setPadColor(padFlowerLamp, colorRed)
-			}
-		case MUSHROOM_LAMP:
-			mushroomFound = true
-			if info.RelayState == 1 {
-				setPadColor(padMushroomLamp, colorGreen)
-			} else {
-				setPadColor(padMushroomLamp, colorRed)
-			}
-		}
-	}
-
-	if !flowerFound {
+func updateLampPads(bulbs map[string]bulbState) {
+	if flower, ok := bulbs[FLOWER_LAMP]; ok {
+		setPadColor(padFlowerLamp, lampPadColor(flower.on))
+	} else {
 		setPadColor(padFlowerLamp, colorRed)
 	}
-	if !mushroomFound {
+
+	if mushroom, ok := bulbs[MUSHROOM_LAMP]; ok {
+		setPadColor(padMushroomLamp, lampPadColor(mushroom.on))
+	} else {
 		setPadColor(padMushroomLamp, colorRed)
 	}
 }
@@ -195,9 +201,15 @@ func main() {
 	fmt.Println(midi.GetOutPorts())
 	fmt.Println()
 
-	in, err := midi.FindInPort("Launchkey")
+	midiIn, err := midi.FindInPort("MIDI Port")
 	if err != nil {
 		fmt.Println("no Launchkey MIDI input port found")
+		os.Exit(1)
+	}
+
+	dawIn, err := midi.FindInPort("DAW")
+	if err != nil {
+		fmt.Println("no Launchkey DAW input port found")
 		os.Exit(1)
 	}
 
@@ -213,16 +225,25 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Printf("Listening on: %s\n", in)
-	fmt.Printf("LED output:   %s\n\n", out)
+	fmt.Printf("MIDI input:   %s\n", midiIn)
+	fmt.Printf("DAW input:    %s\n", dawIn)
+	fmt.Printf("DAW output:   %s\n\n", out)
 
 	enterDAWMode()
 	blankAllPads()
 	updateLampPads(devices)
 
-	stop, err := midi.ListenTo(in, handleMIDI, midi.UseSysEx())
+	stopMidi, err := midi.ListenTo(midiIn, handleMIDI, midi.UseSysEx())
 	if err != nil {
-		fmt.Printf("error listening: %s\n", err)
+		fmt.Printf("error listening on MIDI port: %s\n", err)
+		exitDAWMode()
+		os.Exit(1)
+	}
+
+	stopDaw, err := midi.ListenTo(dawIn, handleMIDI, midi.UseSysEx())
+	if err != nil {
+		fmt.Printf("error listening on DAW port: %s\n", err)
+		stopMidi()
 		exitDAWMode()
 		os.Exit(1)
 	}
@@ -232,7 +253,8 @@ func main() {
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 	<-sig
 
-	stop()
+	stopMidi()
+	stopDaw()
 	blankAllPads()
 	exitDAWMode()
 	fmt.Println("\nStopped.")
