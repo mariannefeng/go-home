@@ -61,10 +61,6 @@ func enterDAWMode() {
 	if err := send(midi.ControlChange(dawModeChannel, 3, 1)); err != nil {
 		fmt.Printf("error setting drum pad mode: %s\n", err)
 	}
-	// Turn off shift button backlight
-	if err := send(midi.ControlChange(0, 108, colorOff)); err != nil {
-		fmt.Printf("error turning off shift LED: %s\n", err)
-	}
 }
 
 func exitDAWMode() {
@@ -330,6 +326,10 @@ func main() {
 	enterDAWMode()
 	blankAllPads()
 	updateLampPads(bulbs)
+
+	if err := send(midi.ControlChange(0, 108, colorOff)); err != nil {
+		fmt.Printf("error turning off shift LED: %s\n", err)
+	}
 
 	stopMidi, err := midi.ListenTo(midiIn, handleMIDI, midi.UseSysEx())
 	if err != nil {
