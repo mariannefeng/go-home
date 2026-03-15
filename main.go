@@ -6,6 +6,7 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 
 	kasa "github.com/cloudkucooland/go-kasa"
 	"gitlab.com/gomidi/midi/v2"
@@ -176,6 +177,35 @@ func toggleLamp(alias string, pad uint8) {
 	fmt.Printf("  %s → %s\n", alias, state)
 }
 
+var lastBrightnessSend sync.Map // alias -> time.Time
+
+func setLampBrightness(alias string, brightness int) {
+	mu.Lock()
+	b, ok := bulbs[alias]
+	mu.Unlock()
+	if !ok {
+		return
+	}
+
+	if last, ok := lastBrightnessSend.Load(alias); ok {
+		if time.Since(last.(time.Time)) < 100*time.Millisecond {
+			return
+		}
+	}
+	lastBrightnessSend.Store(alias, time.Now())
+
+	if err := setLightBrightness(b.ip, brightness); err != nil {
+		fmt.Printf("error setting brightness for %s: %s\n", alias, err)
+		return
+	}
+
+	mu.Lock()
+	b.brightness = uint8(brightness)
+	b.on = brightness > 0
+	bulbs[alias] = b
+	mu.Unlock()
+}
+
 func handleMIDI(msg midi.Message, timestampms int32) {
 	var ch, key, vel, cc, val uint8
 	var pitchRel int16
@@ -207,14 +237,18 @@ func handleMIDI(msg midi.Message, timestampms int32) {
 
 	case msg.GetPitchBend(&ch, &pitchRel, nil):
 		if ch == pitchBendChannel {
-			fmt.Printf("[%6dms] BRIGHTNESS flower lamp  pitch=%d\n", timestampms, pitchRel)
+			brightness := int(pitchRel+8192) * 100 / 16383
+			fmt.Printf("[%6dms] BRIGHTNESS flower lamp  %d%%\n", timestampms, brightness)
+			go setLampBrightness(FLOWER_LAMP, brightness)
 			return
 		}
 		fmt.Printf("[%6dms] PitchBend ch=%d  pitch=%d\n", timestampms, ch, pitchRel)
 
 	case msg.GetControlChange(&ch, &cc, &val):
 		if ch == knobChannel && cc == knobMushroomCC {
-			fmt.Printf("[%6dms] BRIGHTNESS mushroom lamp  val=%d\n", timestampms, val)
+			brightness := int(val) * 100 / 127
+			fmt.Printf("[%6dms] BRIGHTNESS mushroom lamp  %d%%\n", timestampms, brightness)
+			go setLampBrightness(MUSHROOM_LAMP, brightness)
 			return
 		}
 		fmt.Printf("[%6dms] CC        ch=%d  cc=%3d   val=%3d\n", timestampms, ch, cc, val)

@@ -76,7 +76,24 @@ func setLightState(ip string, on bool) error {
 	if on {
 		cmd = cmdSetLightOn
 	}
+	return sendKasaCommand(ip, cmd)
+}
 
+func setLightBrightness(ip string, brightness int) error {
+	if brightness < 1 {
+		return setLightState(ip, false)
+	}
+	if brightness > 100 {
+		brightness = 100
+	}
+	cmd := fmt.Sprintf(
+		`{"smartlife.iot.smartbulb.lightingservice":{"transition_light_state":{"on_off":1,"brightness":%d}}}`,
+		brightness,
+	)
+	return sendKasaCommand(ip, cmd)
+}
+
+func sendKasaCommand(ip, cmd string) error {
 	conn, err := net.DialTimeout("tcp4", fmt.Sprintf("%s:9999", ip), 2*time.Second)
 	if err != nil {
 		return err
