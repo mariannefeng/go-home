@@ -7,7 +7,7 @@ Type=simple
 Restart=always
 RestartSec=5
 User=frodo
-ExecStart=/usr/local/bin/spotifyd --no-daemon
+ExecStart=/usr/bin/dbus-run-session /usr/local/bin/spotifyd --no-daemon
 
 [Install]
 WantedBy=multi-user.target

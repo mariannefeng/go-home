@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
@@ -12,6 +13,15 @@ import (
 	"sync"
 	"time"
 )
+
+var defaultPlaylists = []string{
+	"spotify:playlist:37i9dQZF1E3a2W8bJ0xgR9", // Daily Mix 1
+	"spotify:playlist:37i9dQZF1E36HHA342YoGB", // Daily Mix 2
+	"spotify:playlist:37i9dQZF1E38KeS3y3DpMl", // Daily Mix 3
+	"spotify:playlist:37i9dQZF1E39Vh93Of36Ww", // Daily Mix 4
+	"spotify:playlist:37i9dQZF1E383AryV5uwV9", // Daily Mix 5
+	"spotify:playlist:37i9dQZF1E37eOsAQc1AyM", // Daily Mix 6
+}
 
 type spotifyClient struct {
 	clientID     string
@@ -179,13 +189,29 @@ func spotifyPlay() {
 		fmt.Printf("Spotify play error: %s\n", err)
 		return
 	}
+	resp.Body.Close()
+
+	if resp.StatusCode == 204 || resp.StatusCode == 200 {
+		fmt.Println("  Spotify → playing (resumed)")
+		return
+	}
+
+	playlist := defaultPlaylists[rand.Intn(len(defaultPlaylists))]
+	fmt.Printf("  Spotify: nothing to resume, starting %s\n", playlist)
+
+	body := fmt.Sprintf(`{"context_uri":"%s"}`, playlist)
+	resp, err = spotify.apiRequest("PUT", "/me/player/play?device_id="+deviceID, strings.NewReader(body))
+	if err != nil {
+		fmt.Printf("Spotify play error: %s\n", err)
+		return
+	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == 204 || resp.StatusCode == 200 {
-		fmt.Println("  Spotify → playing")
+		fmt.Println("  Spotify → playing (random Daily Mix)")
 	} else {
-		body, _ := io.ReadAll(resp.Body)
-		fmt.Printf("  Spotify play HTTP %d: %s\n", resp.StatusCode, body)
+		respBody, _ := io.ReadAll(resp.Body)
+		fmt.Printf("  Spotify play HTTP %d: %s\n", resp.StatusCode, respBody)
 	}
 }
 
