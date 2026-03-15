@@ -1,2 +1,4 @@
+github.com/cloudkucooland/go-kasa v0.0.0-20251225171943-cfa233a69f1e h1:Wwp2XwAgmnWyjDDEofyzohoN579DE08RGaBct1WKiNY=
+github.com/cloudkucooland/go-kasa v0.0.0-20251225171943-cfa233a69f1e/go.mod h1:l7eP4ry1HaHJ6JyH6AMW74nAeSdwy30iW69xjU0J23U=
 gitlab.com/gomidi/midi/v2 v2.3.23 h1:P8NxV4EzV9c+BjpwTeB+G/qa+Xdq/UTazS2fKxY0O0g=
 gitlab.com/gomidi/midi/v2 v2.3.23/go.mod h1:jDpP4O4skYi+7iVwt6Zyp18bd2M4hkjtMuw2cmgKgfw=
