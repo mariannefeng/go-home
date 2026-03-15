@@ -20,6 +20,7 @@ const (
 	keyChannel   = 0
 	keyNextTrack = 66
 	keyPrevTrack = 68
+	keyMuteTV    = 48
 
 	dawModeChannel = 15
 	dawModeNote    = 12
@@ -123,6 +124,10 @@ func handleMIDI(msg midi.Message, timestampms int32) {
 				fmt.Printf("[%6dms] PREV TRACK\n", timestampms)
 				go spotifyPrev()
 				return
+			case keyMuteTV:
+				fmt.Printf("[%6dms] MUTE TV\n", timestampms)
+				go toggleTVMute()
+				return
 			}
 		}
 		fmt.Printf("[%6dms] NoteOn    ch=%d  key=%3d  vel=%3d  (%s)\n",
@@ -132,7 +137,7 @@ func handleMIDI(msg midi.Message, timestampms int32) {
 		if ch == padChannel && (key == padFlowerLamp || key == padMushroomLamp || key == padSpeaker || key == padTV) {
 			return
 		}
-		if ch == keyChannel && (key == keyNextTrack || key == keyPrevTrack) {
+		if ch == keyChannel && (key == keyNextTrack || key == keyPrevTrack || key == keyMuteTV) {
 			return
 		}
 		fmt.Printf("[%6dms] NoteOff   ch=%d  key=%3d           (%s)\n",

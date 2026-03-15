@@ -41,6 +41,15 @@ func pollTVStatus(stop <-chan struct{}) {
 	}
 }
 
+func toggleTVMute() {
+	out, err := exec.Command("adb", "-s", tvADBAddr, "shell", "input", "keyevent", "164").CombinedOutput()
+	if err != nil {
+		fmt.Printf("  TV mute error: %s (%s)\n", err, strings.TrimSpace(string(out)))
+		return
+	}
+	fmt.Println("  TV → mute toggled")
+}
+
 func toggleTV() {
 	setPadPulse(padTV, colorPulseLoad)
 
