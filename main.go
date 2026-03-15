@@ -50,13 +50,17 @@ func main() {
 	fmt.Printf("DAW input:    %s\n", dawIn)
 	fmt.Printf("DAW output:   %s\n\n", out)
 
-	speakerStatus := checkSpeakerStatus()
-	fmt.Printf("Speaker (%s): %s\n\n", speakerName, []string{"off", "on (not connected)", "connected"}[speakerStatus])
+	speakerConnected := isSpeakerConnected()
+	state := "disconnected"
+	if speakerConnected {
+		state = "connected"
+	}
+	fmt.Printf("Speaker (%s): %s\n\n", speakerName, state)
 
 	enterDAWMode()
 	blankAllPads()
 	updateLampPads(bulbs)
-	setPadColor(padSpeaker, speakerPadColor(speakerStatus))
+	setPadColor(padSpeaker, speakerPadColor(speakerConnected))
 
 	stopMidi, err := midi.ListenTo(midiIn, handleMIDI, midi.UseSysEx())
 	if err != nil {

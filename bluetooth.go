@@ -15,66 +15,47 @@ const (
 	colorBlue  = 45
 )
 
-type btStatus int
-
-const (
-	btOff        btStatus = iota // unreachable / not paired
-	btOn                         // paired but not connected
-	btConnected                  // paired and connected
-)
-
-func checkSpeakerStatus() btStatus {
+func isSpeakerConnected() bool {
 	out, err := exec.Command("bluetoothctl", "info", speakerMAC).CombinedOutput()
 	if err != nil {
-		return btOff
+		return false
 	}
-
-	info := string(out)
-	if !strings.Contains(info, "Paired: yes") {
-		return btOff
-	}
-	if strings.Contains(info, "Connected: yes") {
-		return btConnected
-	}
-	return btOn
+	return strings.Contains(string(out), "Connected: yes")
 }
 
-func speakerPadColor(status btStatus) uint8 {
-	switch status {
-	case btConnected:
+func speakerPadColor(connected bool) uint8 {
+	if connected {
 		return colorGreen
-	case btOn:
-		return colorBlue
-	default:
-		return colorRed
 	}
+	return colorRed
 }
 
 func pollSpeakerStatus(stop <-chan struct{}) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
-	var last btStatus = -1
+	last := false
 	for {
 		select {
 		case <-stop:
 			return
 		case <-ticker.C:
-			status := checkSpeakerStatus()
-			if status != last {
-				fmt.Printf("Speaker status changed → %s\n", []string{"off", "on", "connected"}[status])
-				setPadColor(padSpeaker, speakerPadColor(status))
-				last = status
+			connected := isSpeakerConnected()
+			if connected != last {
+				state := "disconnected"
+				if connected {
+					state = "connected"
+				}
+				fmt.Printf("Speaker status changed → %s\n", state)
+				setPadColor(padSpeaker, speakerPadColor(connected))
+				last = connected
 			}
 		}
 	}
 }
 
 func toggleSpeaker() {
-	status := checkSpeakerStatus()
-
-	switch status {
-	case btConnected:
+	if isSpeakerConnected() {
 		fmt.Printf("  %s: disconnecting...\n", speakerName)
 		out, err := exec.Command("bluetoothctl", "disconnect", speakerMAC).CombinedOutput()
 		if err != nil {
@@ -82,9 +63,8 @@ func toggleSpeaker() {
 			return
 		}
 		fmt.Printf("  %s → disconnected\n", speakerName)
-		setPadColor(padSpeaker, colorBlue)
-
-	case btOn:
+		setPadColor(padSpeaker, colorRed)
+	} else {
 		fmt.Printf("  %s: connecting...\n", speakerName)
 		out, err := exec.Command("bluetoothctl", "connect", speakerMAC).CombinedOutput()
 		if err != nil {
@@ -97,8 +77,5 @@ func toggleSpeaker() {
 		} else {
 			fmt.Printf("  connect result: %s\n", strings.TrimSpace(string(out)))
 		}
-
-	default:
-		fmt.Printf("  %s: speaker is off or not paired\n", speakerName)
 	}
 }
