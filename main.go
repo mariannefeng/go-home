@@ -50,6 +50,11 @@ func enterDAWMode() {
 	}
 	if err := send(midi.NoteOn(dawModeChannel, dawModeNote, 127)); err != nil {
 		fmt.Printf("error entering DAW mode: %s\n", err)
+		return
+	}
+	// Switch to drum pad mode (CC 3 = 1 on ch 16)
+	if err := send(midi.ControlChange(dawModeChannel, 3, 1)); err != nil {
+		fmt.Printf("error setting drum pad mode: %s\n", err)
 	}
 }
 
