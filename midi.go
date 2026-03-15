@@ -32,7 +32,7 @@ const (
 
 	colorOff       = 0
 	colorRed       = 5
-	colorDimRed    = 60
+	colorDimRed    = 9
 	colorGreen     = 21
 	colorYellow    = 13
 	colorPulseLoad = 45
