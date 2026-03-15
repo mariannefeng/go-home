@@ -30,11 +30,11 @@ const (
 
 	padChannelPulse = 11
 
-	colorOff       = 0
+	colorOff   = 0
+	colorOn    = 21
+	colorNotOn = 13
+
 	colorRed       = 5
-	colorDimRed    = 9
-	colorGreen     = 21
-	colorYellow    = 13
 	colorPulseLoad = 45
 )
 

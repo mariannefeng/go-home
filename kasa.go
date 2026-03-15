@@ -69,9 +69,9 @@ func initKasa() map[string]bulbState {
 
 func lampPadColor(on bool) uint8 {
 	if on {
-		return colorGreen
+		return colorOn
 	}
-	return colorDimRed
+	return colorNotOn
 }
 
 func updateLampPads(bulbs map[string]bulbState) {
@@ -103,14 +103,14 @@ func pollLampStatus(stop <-chan struct{}) {
 					continue
 				}
 				on := ls.OnOff == 1
-			mu.Lock()
-			b := bulbs[kb.alias]
-			b.alias = kb.alias
-			b.ip = kb.ip
-			b.on = on
-			b.brightness = ls.Brightness
-			bulbs[kb.alias] = b
-			mu.Unlock()
+				mu.Lock()
+				b := bulbs[kb.alias]
+				b.alias = kb.alias
+				b.ip = kb.ip
+				b.on = on
+				b.brightness = ls.Brightness
+				bulbs[kb.alias] = b
+				mu.Unlock()
 			}
 			mu.Lock()
 			updateLampPads(bulbs)

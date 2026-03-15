@@ -24,9 +24,9 @@ func isSpeakerConnected() bool {
 
 func speakerPadColor(connected bool) uint8 {
 	if connected {
-		return colorGreen
+		return colorOn
 	}
-	return colorDimRed
+	return colorNotOn
 }
 
 func pollSpeakerStatus(stop <-chan struct{}) {
@@ -56,7 +56,7 @@ func toggleSpeaker() {
 			return
 		}
 		fmt.Printf("  %s → disconnected\n", speakerName)
-		setPadColor(padSpeaker, colorDimRed)
+		setPadColor(padSpeaker, colorNotOn)
 	} else {
 		fmt.Printf("  %s: connecting...\n", speakerName)
 		out, err := exec.Command("bluetoothctl", "connect", speakerMAC).CombinedOutput()
@@ -67,7 +67,7 @@ func toggleSpeaker() {
 		}
 		if strings.Contains(string(out), "Connection successful") {
 			fmt.Printf("  %s → connected\n", speakerName)
-			setPadColor(padSpeaker, colorGreen)
+			setPadColor(padSpeaker, colorOn)
 		} else {
 			fmt.Printf("  connect result: %s\n", strings.TrimSpace(string(out)))
 			setPadColor(padSpeaker, speakerPadColor(isSpeakerConnected()))

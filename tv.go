@@ -8,8 +8,8 @@ import (
 )
 
 const (
-	tvADBAddr  = "192.168.1.175:5555"
-	padTV      = 51
+	tvADBAddr = "192.168.1.175:5555"
+	padTV     = 51
 )
 
 func isTVOn() bool {
@@ -22,9 +22,9 @@ func isTVOn() bool {
 
 func tvPadColor(on bool) uint8 {
 	if on {
-		return colorGreen
+		return colorOn
 	}
-	return colorDimRed
+	return colorNotOn
 }
 
 func pollTVStatus(stop <-chan struct{}) {
