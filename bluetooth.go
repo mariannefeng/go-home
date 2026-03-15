@@ -45,12 +45,36 @@ func pollSpeakerStatus(stop <-chan struct{}) {
 	}
 }
 
+var rainbowColors = []uint8{5, 9, 13, 21, 45, 49, 53}
+
+func startRainbow(pad uint8) chan struct{} {
+	stop := make(chan struct{})
+	go func() {
+		i := 0
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				setPadColor(pad, rainbowColors[i%len(rainbowColors)])
+				i++
+				time.Sleep(200 * time.Millisecond)
+			}
+		}
+	}()
+	return stop
+}
+
 func toggleSpeaker() {
+	rainbow := startRainbow(padSpeaker)
+	defer close(rainbow)
+
 	if isSpeakerConnected() {
 		fmt.Printf("  %s: disconnecting...\n", speakerName)
 		out, err := exec.Command("bluetoothctl", "disconnect", speakerMAC).CombinedOutput()
 		if err != nil {
 			fmt.Printf("  disconnect error: %s (%s)\n", err, strings.TrimSpace(string(out)))
+			setPadColor(padSpeaker, speakerPadColor(isSpeakerConnected()))
 			return
 		}
 		fmt.Printf("  %s → disconnected\n", speakerName)
@@ -60,6 +84,7 @@ func toggleSpeaker() {
 		out, err := exec.Command("bluetoothctl", "connect", speakerMAC).CombinedOutput()
 		if err != nil {
 			fmt.Printf("  connect error: %s (%s)\n", err, strings.TrimSpace(string(out)))
+			setPadColor(padSpeaker, speakerPadColor(isSpeakerConnected()))
 			return
 		}
 		if strings.Contains(string(out), "Connection successful") {
@@ -67,6 +92,7 @@ func toggleSpeaker() {
 			setPadColor(padSpeaker, colorGreen)
 		} else {
 			fmt.Printf("  connect result: %s\n", strings.TrimSpace(string(out)))
+			setPadColor(padSpeaker, speakerPadColor(isSpeakerConnected()))
 		}
 	}
 }

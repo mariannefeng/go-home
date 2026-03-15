@@ -21,9 +21,12 @@ const (
 	ccPlay           = 115
 	ccStop           = 117
 
-	colorOff   = 0
-	colorRed   = 5
-	colorGreen = 21
+	padChannelPulse = 11
+
+	colorOff    = 0
+	colorRed    = 5
+	colorGreen  = 21
+	colorYellow = 13
 )
 
 var send func(midi.Message) error
@@ -34,6 +37,15 @@ func setPadColor(pad, color uint8) {
 	}
 	if err := send(midi.NoteOn(padChannel, pad, color)); err != nil {
 		fmt.Printf("error setting pad %d color: %s\n", pad, err)
+	}
+}
+
+func setPadPulse(pad, color uint8) {
+	if send == nil {
+		return
+	}
+	if err := send(midi.NoteOn(padChannelPulse, pad, color)); err != nil {
+		fmt.Printf("error setting pad %d pulse: %s\n", pad, err)
 	}
 }
 
