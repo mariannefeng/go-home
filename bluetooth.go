@@ -34,18 +34,19 @@ func pollSpeakerStatus(stop <-chan struct{}) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
-	last := false
+	last := isSpeakerConnected()
 	for {
 		select {
 		case <-stop:
 			return
 		case <-ticker.C:
 			connected := isSpeakerConnected()
+			state := "disconnected"
+			if connected {
+				state = "connected"
+			}
+			fmt.Printf("[bt poll] speaker: %s\n", state)
 			if connected != last {
-				state := "disconnected"
-				if connected {
-					state = "connected"
-				}
 				fmt.Printf("Speaker status changed → %s\n", state)
 				setPadColor(padSpeaker, speakerPadColor(connected))
 				last = connected
