@@ -8,7 +8,6 @@ import (
 	"syscall"
 	"time"
 
-	kasa "github.com/cloudkucooland/go-kasa"
 	"gitlab.com/gomidi/midi/v2"
 	_ "gitlab.com/gomidi/midi/v2/drivers/rtmididrv"
 )
@@ -84,38 +83,22 @@ type bulbState struct {
 	brightness uint8
 }
 
-func discoverKasa(retries int) map[string]bulbState {
-	fmt.Println("Discovering Kasa devices...")
+var knownBulbs = []struct {
+	alias string
+	ip    string
+}{
+	{FLOWER_LAMP, FLOWER_LAMP_IP},
+	{MUSHROOM_LAMP, MUSHROOM_LAMP_IP},
+}
 
-	var devices map[string]*kasa.Sysinfo
-	for attempt := 1; attempt <= retries; attempt++ {
-		var err error
-		devices, err = kasa.BroadcastDiscovery(3, 1)
-		if err != nil {
-			fmt.Printf("Kasa discovery error (attempt %d): %s\n", attempt, err)
-			continue
-		}
-		if len(devices) > 0 {
-			break
-		}
-		fmt.Printf("No devices found (attempt %d/%d), retrying...\n", attempt, retries)
-		time.Sleep(2 * time.Second)
-	}
-
-	fmt.Printf("Found %d Kasa device(s):\n", len(devices))
-
+func initKasa() map[string]bulbState {
+	fmt.Println("Connecting to Kasa bulbs...")
 	result := make(map[string]bulbState)
-	for ip, info := range devices {
-		if info.Alias == "" {
-			fmt.Printf("  %s: unknown device (model=%q), skipping\n", ip, info.Model)
-			continue
-		}
 
-		fmt.Printf("  %s: %s [%s]\n", ip, info.Alias, info.Model)
-
-		ls, err := queryLightState(ip)
+	for _, kb := range knownBulbs {
+		ls, err := queryLightState(kb.ip)
 		if err != nil {
-			fmt.Printf("    light state error: %s\n", err)
+			fmt.Printf("  %s (%s): error: %s\n", kb.alias, kb.ip, err)
 			continue
 		}
 
@@ -124,12 +107,11 @@ func discoverKasa(retries int) map[string]bulbState {
 		if on {
 			state = "ON"
 		}
-		fmt.Printf("    state=%s  brightness=%d%%  hue=%d  saturation=%d  colorTemp=%d\n",
-			state, ls.Brightness, ls.Hue, ls.Saturation, ls.ColorTemp)
+		fmt.Printf("  %s (%s): %s  brightness=%d%%\n", kb.alias, kb.ip, state, ls.Brightness)
 
-		result[info.Alias] = bulbState{
-			alias:      info.Alias,
-			ip:         ip,
+		result[kb.alias] = bulbState{
+			alias:      kb.alias,
+			ip:         kb.ip,
 			on:         on,
 			brightness: ls.Brightness,
 		}
@@ -160,8 +142,10 @@ func updateLampPads(bulbs map[string]bulbState) {
 }
 
 const (
-	MUSHROOM_LAMP = "Mushroom bulb"
-	FLOWER_LAMP   = "Flower lamp"
+	MUSHROOM_LAMP    = "Mushroom bulb"
+	MUSHROOM_LAMP_IP = "192.168.1.160"
+	FLOWER_LAMP      = "Flower lamp"
+	FLOWER_LAMP_IP   = "192.168.1.153"
 )
 
 func toggleLamp(alias string, pad uint8) {
@@ -170,16 +154,16 @@ func toggleLamp(alias string, pad uint8) {
 
 	b, ok := bulbs[alias]
 	if !ok {
-		fmt.Printf("lamp %q not found, re-discovering...\n", alias)
+		fmt.Printf("lamp %q not in cache, querying directly...\n", alias)
 		mu.Unlock()
-		fresh := discoverKasa(1)
+		fresh := initKasa()
 		mu.Lock()
 		for k, v := range fresh {
 			bulbs[k] = v
 		}
 		b, ok = bulbs[alias]
 		if !ok {
-			fmt.Printf("lamp %q still not found after re-discovery\n", alias)
+			fmt.Printf("lamp %q still unreachable\n", alias)
 			return
 		}
 		updateLampPads(bulbs)
@@ -307,7 +291,7 @@ func handleMIDI(msg midi.Message, timestampms int32) {
 func main() {
 	defer midi.CloseDriver()
 
-	bulbs = discoverKasa(3)
+	bulbs = initKasa()
 
 	fmt.Println("Available MIDI input ports:")
 	fmt.Println(midi.GetInPorts())
