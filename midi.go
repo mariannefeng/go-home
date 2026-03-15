@@ -30,11 +30,12 @@ const (
 
 	padChannelPulse = 11
 
-	colorOff    = 0
-	colorRed    = 5
-	colorDimRed = 3
-	colorGreen  = 21
-	colorYellow = 13
+	colorOff       = 0
+	colorRed       = 5
+	colorDimRed    = 60
+	colorGreen     = 21
+	colorYellow    = 13
+	colorPulseLoad = 45
 )
 
 var send func(midi.Message) error
@@ -102,14 +103,14 @@ func handleMIDI(msg midi.Message, timestampms int32) {
 				fmt.Printf("[%6dms] TOGGLE mushroom lamp (vel=%d)\n", timestampms, vel)
 				go toggleLamp(MUSHROOM_LAMP, padMushroomLamp)
 				return
-		case padSpeaker:
-			fmt.Printf("[%6dms] TOGGLE speaker (vel=%d)\n", timestampms, vel)
-			go toggleSpeaker()
-			return
-		case padTV:
-			fmt.Printf("[%6dms] TOGGLE TV (vel=%d)\n", timestampms, vel)
-			go toggleTV()
-			return
+			case padSpeaker:
+				fmt.Printf("[%6dms] TOGGLE speaker (vel=%d)\n", timestampms, vel)
+				go toggleSpeaker()
+				return
+			case padTV:
+				fmt.Printf("[%6dms] TOGGLE TV (vel=%d)\n", timestampms, vel)
+				go toggleTV()
+				return
 			}
 		}
 		if ch == keyChannel {

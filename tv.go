@@ -42,8 +42,7 @@ func pollTVStatus(stop <-chan struct{}) {
 }
 
 func toggleTV() {
-	rainbow := startRainbow(padTV)
-	defer close(rainbow)
+	setPadPulse(padTV, colorPulseLoad)
 
 	wasOn := isTVOn()
 	out, err := exec.Command("adb", "-s", tvADBAddr, "shell", "input", "keyevent", "26").CombinedOutput()

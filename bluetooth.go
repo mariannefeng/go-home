@@ -12,7 +12,6 @@ const (
 	speakerName = "Deep Space Fine"
 
 	padSpeaker = 47
-	colorBlue  = 45
 )
 
 func isSpeakerConnected() bool {
@@ -45,29 +44,8 @@ func pollSpeakerStatus(stop <-chan struct{}) {
 	}
 }
 
-var rainbowColors = []uint8{5, 9, 13, 21, 45, 49, 53}
-
-func startRainbow(pad uint8) chan struct{} {
-	stop := make(chan struct{})
-	go func() {
-		i := 0
-		for {
-			select {
-			case <-stop:
-				return
-			default:
-				setPadPulse(pad, rainbowColors[i%len(rainbowColors)])
-				i++
-				time.Sleep(1500 * time.Millisecond)
-			}
-		}
-	}()
-	return stop
-}
-
 func toggleSpeaker() {
-	rainbow := startRainbow(padSpeaker)
-	defer close(rainbow)
+	setPadPulse(padSpeaker, colorPulseLoad)
 
 	if isSpeakerConnected() {
 		fmt.Printf("  %s: disconnecting...\n", speakerName)
