@@ -55,12 +55,20 @@ func main() {
 	if speakerConnected {
 		state = "connected"
 	}
-	fmt.Printf("Speaker (%s): %s\n\n", speakerName, state)
+	fmt.Printf("Speaker (%s): %s\n", speakerName, state)
+
+	tvOn := isTVOn()
+	tvState := "off"
+	if tvOn {
+		tvState = "on"
+	}
+	fmt.Printf("TV (%s): %s\n\n", tvADBAddr, tvState)
 
 	enterDAWMode()
 	blankAllPads()
 	updateLampPads(bulbs)
 	setPadColor(padSpeaker, speakerPadColor(speakerConnected))
+	setPadColor(padTV, tvPadColor(tvOn))
 
 	stopMidi, err := midi.ListenTo(midiIn, handleMIDI, midi.UseSysEx())
 	if err != nil {
@@ -80,6 +88,7 @@ func main() {
 	stopPoll := make(chan struct{})
 	go pollSpeakerStatus(stopPoll)
 	go pollLampStatus(stopPoll)
+	go pollTVStatus(stopPoll)
 
 	fmt.Println("Ready.")
 	sig := make(chan os.Signal, 1)

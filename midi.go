@@ -32,6 +32,7 @@ const (
 
 	colorOff    = 0
 	colorRed    = 5
+	colorDimRed = 3
 	colorGreen  = 21
 	colorYellow = 13
 )
@@ -101,10 +102,14 @@ func handleMIDI(msg midi.Message, timestampms int32) {
 				fmt.Printf("[%6dms] TOGGLE mushroom lamp (vel=%d)\n", timestampms, vel)
 				go toggleLamp(MUSHROOM_LAMP, padMushroomLamp)
 				return
-			case padSpeaker:
-				fmt.Printf("[%6dms] TOGGLE speaker (vel=%d)\n", timestampms, vel)
-				go toggleSpeaker()
-				return
+		case padSpeaker:
+			fmt.Printf("[%6dms] TOGGLE speaker (vel=%d)\n", timestampms, vel)
+			go toggleSpeaker()
+			return
+		case padTV:
+			fmt.Printf("[%6dms] TOGGLE TV (vel=%d)\n", timestampms, vel)
+			go toggleTV()
+			return
 			}
 		}
 		if ch == keyChannel {
@@ -123,7 +128,7 @@ func handleMIDI(msg midi.Message, timestampms int32) {
 			timestampms, ch, key, vel, midi.Note(key))
 
 	case msg.GetNoteEnd(&ch, &key):
-		if ch == padChannel && (key == padFlowerLamp || key == padMushroomLamp || key == padSpeaker) {
+		if ch == padChannel && (key == padFlowerLamp || key == padMushroomLamp || key == padSpeaker || key == padTV) {
 			return
 		}
 		if ch == keyChannel && (key == keyNextTrack || key == keyPrevTrack) {

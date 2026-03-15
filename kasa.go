@@ -71,7 +71,7 @@ func lampPadColor(on bool) uint8 {
 	if on {
 		return colorGreen
 	}
-	return colorRed
+	return colorDimRed
 }
 
 func updateLampPads(bulbs map[string]bulbState) {
