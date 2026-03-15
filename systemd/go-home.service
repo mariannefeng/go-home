@@ -1,0 +1,15 @@
+[Unit]
+Description=Go Home MIDI Controller
+After=network.target sound.target
+StartLimitIntervalSec=30
+StartLimitBurst=3
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+User=frodo
+ExecStart=/usr/local/bin/go-home
+
+[Install]
+WantedBy=multi-user.target

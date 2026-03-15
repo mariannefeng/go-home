@@ -15,3 +15,8 @@ jobs:
           go-version-file: go.mod
 
       - run: go build -o go-home .
+
+      - run: |
+          sudo systemctl stop go-home || true
+          sudo cp go-home /usr/local/bin/go-home
+          sudo systemctl start go-home
