@@ -82,13 +82,17 @@ func handleMIDI(msg midi.Message, timestampms int32) {
 				fmt.Printf("[%6dms] TOGGLE mushroom lamp (vel=%d)\n", timestampms, vel)
 				go toggleLamp(MUSHROOM_LAMP, padMushroomLamp)
 				return
+			case padSpeaker:
+				fmt.Printf("[%6dms] TOGGLE speaker (vel=%d)\n", timestampms, vel)
+				go toggleSpeaker()
+				return
 			}
 		}
 		fmt.Printf("[%6dms] NoteOn    ch=%d  key=%3d  vel=%3d  (%s)\n",
 			timestampms, ch, key, vel, midi.Note(key))
 
 	case msg.GetNoteEnd(&ch, &key):
-		if ch == padChannel && (key == padFlowerLamp || key == padMushroomLamp) {
+		if ch == padChannel && (key == padFlowerLamp || key == padMushroomLamp || key == padSpeaker) {
 			return
 		}
 		fmt.Printf("[%6dms] NoteOff   ch=%d  key=%3d           (%s)\n",
