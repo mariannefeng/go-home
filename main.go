@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 
 	kasa "github.com/cloudkucooland/go-kasa"
@@ -27,7 +28,11 @@ const (
 	colorGreen = 21
 )
 
-var send func(midi.Message) error
+var (
+	send  func(midi.Message) error
+	bulbs map[string]bulbState
+	mu    sync.Mutex
+)
 
 func setPadColor(pad, color uint8) {
 	if send == nil {
@@ -143,6 +148,34 @@ const (
 	FLOWER_LAMP   = "Flower lamp"
 )
 
+func toggleLamp(alias string, pad uint8) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	b, ok := bulbs[alias]
+	if !ok {
+		fmt.Printf("lamp %q not found, cannot toggle\n", alias)
+		return
+	}
+
+	newState := !b.on
+	if err := setLightState(b.ip, newState); err != nil {
+		fmt.Printf("error toggling %s: %s\n", alias, err)
+		return
+	}
+
+	b.on = newState
+	bulbs[alias] = b
+
+	setPadColor(pad, lampPadColor(newState))
+
+	state := "OFF"
+	if newState {
+		state = "ON"
+	}
+	fmt.Printf("  %s → %s\n", alias, state)
+}
+
 func handleMIDI(msg midi.Message, timestampms int32) {
 	var ch, key, vel, cc, val uint8
 	var pitchRel int16
@@ -154,9 +187,11 @@ func handleMIDI(msg midi.Message, timestampms int32) {
 			switch key {
 			case padFlowerLamp:
 				fmt.Printf("[%6dms] TOGGLE flower lamp (vel=%d)\n", timestampms, vel)
+				go toggleLamp(FLOWER_LAMP, padFlowerLamp)
 				return
 			case padMushroomLamp:
 				fmt.Printf("[%6dms] TOGGLE mushroom lamp (vel=%d)\n", timestampms, vel)
+				go toggleLamp(MUSHROOM_LAMP, padMushroomLamp)
 				return
 			}
 		}
@@ -198,7 +233,7 @@ func handleMIDI(msg midi.Message, timestampms int32) {
 func main() {
 	defer midi.CloseDriver()
 
-	devices := discoverKasa()
+	bulbs = discoverKasa()
 
 	fmt.Println("Available MIDI input ports:")
 	fmt.Println(midi.GetInPorts())
@@ -236,7 +271,7 @@ func main() {
 
 	enterDAWMode()
 	blankAllPads()
-	updateLampPads(devices)
+	updateLampPads(bulbs)
 
 	stopMidi, err := midi.ListenTo(midiIn, handleMIDI, midi.UseSysEx())
 	if err != nil {

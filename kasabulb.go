@@ -24,7 +24,11 @@ type lightStateResponse struct {
 	} `json:"smartlife.iot.smartbulb.lightingservice"`
 }
 
-const cmdGetLightState = `{"smartlife.iot.smartbulb.lightingservice":{"get_light_state":{}}}`
+const (
+	cmdGetLightState = `{"smartlife.iot.smartbulb.lightingservice":{"get_light_state":{}}}`
+	cmdSetLightOn    = `{"smartlife.iot.smartbulb.lightingservice":{"transition_light_state":{"on_off":1}}}`
+	cmdSetLightOff   = `{"smartlife.iot.smartbulb.lightingservice":{"transition_light_state":{"on_off":0}}}`
+)
 
 func queryLightState(ip string) (*lightState, error) {
 	dialer := &net.Dialer{
@@ -65,4 +69,20 @@ func queryLightState(ip string) (*lightState, error) {
 	}
 
 	return &resp.LightingService.LightState, nil
+}
+
+func setLightState(ip string, on bool) error {
+	cmd := cmdSetLightOff
+	if on {
+		cmd = cmdSetLightOn
+	}
+
+	conn, err := net.DialTimeout("tcp4", fmt.Sprintf("%s:9999", ip), 2*time.Second)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	_, err = conn.Write(kasa.ScrambleTCP(cmd))
+	return err
 }
