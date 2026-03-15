@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 const (
@@ -46,6 +47,26 @@ func speakerPadColor(status btStatus) uint8 {
 		return colorBlue
 	default:
 		return colorRed
+	}
+}
+
+func pollSpeakerStatus(stop <-chan struct{}) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	var last btStatus = -1
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+			status := checkSpeakerStatus()
+			if status != last {
+				fmt.Printf("Speaker status changed → %s\n", []string{"off", "on", "connected"}[status])
+				setPadColor(padSpeaker, speakerPadColor(status))
+				last = status
+			}
+		}
 	}
 }
 

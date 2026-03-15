@@ -73,11 +73,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	stopBtPoll := make(chan struct{})
+	go pollSpeakerStatus(stopBtPoll)
+
 	fmt.Println("Ready.")
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 	<-sig
 
+	close(stopBtPoll)
 	stopMidi()
 	stopDaw()
 	blankAllPads()
