@@ -172,6 +172,26 @@ func (s *spotifyClient) findDeviceID() (string, error) {
 	return "", fmt.Errorf("device %q not found (available: %v)", s.deviceName, names)
 }
 
+func (s *spotifyClient) hasActivePlayback() bool {
+	resp, err := s.apiRequest("GET", "/me/player", nil)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 204 {
+		return false
+	}
+
+	var state struct {
+		Item *json.RawMessage `json:"item"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&state); err != nil {
+		return false
+	}
+	return state.Item != nil
+}
+
 func spotifyPlay() {
 	if spotify == nil {
 		fmt.Println("Spotify: not configured")
@@ -184,23 +204,22 @@ func spotifyPlay() {
 		return
 	}
 
-	resp, err := spotify.apiRequest("PUT", "/me/player/play?device_id="+deviceID, nil)
-	if err != nil {
-		fmt.Printf("Spotify play error: %s\n", err)
-		return
-	}
-	resp.Body.Close()
-
-	if resp.StatusCode == 204 || resp.StatusCode == 200 {
+	if spotify.hasActivePlayback() {
+		resp, err := spotify.apiRequest("PUT", "/me/player/play?device_id="+deviceID, nil)
+		if err != nil {
+			fmt.Printf("Spotify play error: %s\n", err)
+			return
+		}
+		resp.Body.Close()
 		fmt.Println("  Spotify → playing (resumed)")
 		return
 	}
 
 	playlist := defaultPlaylists[rand.Intn(len(defaultPlaylists))]
-	fmt.Printf("  Spotify: nothing to resume, starting %s\n", playlist)
+	fmt.Printf("  Spotify: nothing active, starting %s\n", playlist)
 
 	body := fmt.Sprintf(`{"context_uri":"%s"}`, playlist)
-	resp, err = spotify.apiRequest("PUT", "/me/player/play?device_id="+deviceID, strings.NewReader(body))
+	resp, err := spotify.apiRequest("PUT", "/me/player/play?device_id="+deviceID, strings.NewReader(body))
 	if err != nil {
 		fmt.Printf("Spotify play error: %s\n", err)
 		return
