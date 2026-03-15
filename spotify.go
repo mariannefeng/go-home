@@ -286,6 +286,48 @@ func spotifyAdjustVolume(delta int) {
 	}
 }
 
+func spotifyNext() {
+	if spotify == nil {
+		fmt.Println("Spotify: not configured")
+		return
+	}
+
+	resp, err := spotify.apiRequest("POST", "/me/player/next", nil)
+	if err != nil {
+		fmt.Printf("Spotify next error: %s\n", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 204 || resp.StatusCode == 200 {
+		fmt.Println("  Spotify → next track")
+	} else {
+		body, _ := io.ReadAll(resp.Body)
+		fmt.Printf("  Spotify next HTTP %d: %s\n", resp.StatusCode, body)
+	}
+}
+
+func spotifyPrev() {
+	if spotify == nil {
+		fmt.Println("Spotify: not configured")
+		return
+	}
+
+	resp, err := spotify.apiRequest("POST", "/me/player/previous", nil)
+	if err != nil {
+		fmt.Printf("Spotify prev error: %s\n", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 204 || resp.StatusCode == 200 {
+		fmt.Println("  Spotify → previous track")
+	} else {
+		body, _ := io.ReadAll(resp.Body)
+		fmt.Printf("  Spotify prev HTTP %d: %s\n", resp.StatusCode, body)
+	}
+}
+
 func spotifyPause() {
 	if spotify == nil {
 		fmt.Println("Spotify: not configured")

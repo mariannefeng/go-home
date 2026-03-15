@@ -17,6 +17,10 @@ const (
 	ccVolUp   = 105
 	ccVolDown = 104
 
+	keyChannel   = 0
+	keyNextTrack = 66
+	keyPrevTrack = 68
+
 	dawModeChannel = 15
 	dawModeNote    = 12
 
@@ -103,11 +107,26 @@ func handleMIDI(msg midi.Message, timestampms int32) {
 				return
 			}
 		}
+		if ch == keyChannel {
+			switch key {
+			case keyNextTrack:
+				fmt.Printf("[%6dms] NEXT TRACK\n", timestampms)
+				go spotifyNext()
+				return
+			case keyPrevTrack:
+				fmt.Printf("[%6dms] PREV TRACK\n", timestampms)
+				go spotifyPrev()
+				return
+			}
+		}
 		fmt.Printf("[%6dms] NoteOn    ch=%d  key=%3d  vel=%3d  (%s)\n",
 			timestampms, ch, key, vel, midi.Note(key))
 
 	case msg.GetNoteEnd(&ch, &key):
 		if ch == padChannel && (key == padFlowerLamp || key == padMushroomLamp || key == padSpeaker) {
+			return
+		}
+		if ch == keyChannel && (key == keyNextTrack || key == keyPrevTrack) {
 			return
 		}
 		fmt.Printf("[%6dms] NoteOff   ch=%d  key=%3d           (%s)\n",
