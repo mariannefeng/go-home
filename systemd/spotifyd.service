@@ -1,16 +1,13 @@
 [Unit]
-Description=Go Home MIDI Controller
+Description=Spotifyd Spotify Connect
 After=network-online.target sound.target
-StartLimitIntervalSec=30
-StartLimitBurst=3
 
 [Service]
 Type=simple
 Restart=always
 RestartSec=5
 User=frodo
-ExecStart=/usr/local/bin/go-home
-EnvironmentFile=/etc/go-home.env
+ExecStart=/usr/local/bin/spotifyd --no-daemon
 
 [Install]
 WantedBy=multi-user.target
