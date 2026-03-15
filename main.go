@@ -62,6 +62,10 @@ func enterDAWMode() {
 	if err := send(midi.ControlChange(dawModeChannel, 3, 1)); err != nil {
 		fmt.Printf("error setting drum pad mode: %s\n", err)
 	}
+	// Turn off shift button backlight
+	if err := send(midi.ControlChange(0, 108, colorOff)); err != nil {
+		fmt.Printf("error turning off shift LED: %s\n", err)
+	}
 }
 
 func exitDAWMode() {
@@ -179,6 +183,11 @@ func toggleLamp(alias string, pad uint8) {
 
 var lastBrightnessSend sync.Map // alias -> time.Time
 
+var lampPads = map[string]uint8{
+	FLOWER_LAMP:   padFlowerLamp,
+	MUSHROOM_LAMP: padMushroomLamp,
+}
+
 func setLampBrightness(alias string, brightness int) {
 	mu.Lock()
 	b, ok := bulbs[alias]
@@ -199,11 +208,20 @@ func setLampBrightness(alias string, brightness int) {
 		return
 	}
 
+	newOn := brightness > 0
+	wasOn := b.on
+
 	mu.Lock()
 	b.brightness = uint8(brightness)
-	b.on = brightness > 0
+	b.on = newOn
 	bulbs[alias] = b
 	mu.Unlock()
+
+	if newOn != wasOn {
+		if pad, ok := lampPads[alias]; ok {
+			setPadColor(pad, lampPadColor(newOn))
+		}
+	}
 }
 
 func handleMIDI(msg midi.Message, timestampms int32) {
@@ -237,7 +255,7 @@ func handleMIDI(msg midi.Message, timestampms int32) {
 
 	case msg.GetPitchBend(&ch, &pitchRel, nil):
 		if ch == pitchBendChannel {
-			brightness := int(pitchRel+8192) * 100 / 16383
+			brightness := 100 - int(pitchRel+8192)*100/16383
 			fmt.Printf("[%6dms] BRIGHTNESS flower lamp  %d%%\n", timestampms, brightness)
 			go setLampBrightness(FLOWER_LAMP, brightness)
 			return
@@ -246,7 +264,7 @@ func handleMIDI(msg midi.Message, timestampms int32) {
 
 	case msg.GetControlChange(&ch, &cc, &val):
 		if ch == knobChannel && cc == knobMushroomCC {
-			brightness := int(val) * 100 / 127
+			brightness := 100 - int(val)*100/127
 			fmt.Printf("[%6dms] BRIGHTNESS mushroom lamp  %d%%\n", timestampms, brightness)
 			go setLampBrightness(MUSHROOM_LAMP, brightness)
 			return
