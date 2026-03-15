@@ -234,6 +234,58 @@ func spotifyPlay() {
 	}
 }
 
+func spotifyAdjustVolume(delta int) {
+	if spotify == nil {
+		fmt.Println("Spotify: not configured")
+		return
+	}
+
+	resp, err := spotify.apiRequest("GET", "/me/player", nil)
+	if err != nil {
+		fmt.Printf("Spotify volume error: %s\n", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 204 {
+		fmt.Println("Spotify volume: no active playback")
+		return
+	}
+
+	var state struct {
+		Device struct {
+			VolumePercent int `json:"volume_percent"`
+		} `json:"device"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&state); err != nil {
+		fmt.Printf("Spotify volume error: %s\n", err)
+		return
+	}
+
+	vol := state.Device.VolumePercent + delta
+	if vol > 100 {
+		vol = 100
+	}
+	if vol < 0 {
+		vol = 0
+	}
+
+	path := fmt.Sprintf("/me/player/volume?volume_percent=%d", vol)
+	vResp, err := spotify.apiRequest("PUT", path, nil)
+	if err != nil {
+		fmt.Printf("Spotify volume error: %s\n", err)
+		return
+	}
+	defer vResp.Body.Close()
+
+	if vResp.StatusCode == 204 || vResp.StatusCode == 200 {
+		fmt.Printf("  Spotify → volume %d%%\n", vol)
+	} else {
+		body, _ := io.ReadAll(vResp.Body)
+		fmt.Printf("  Spotify volume HTTP %d: %s\n", vResp.StatusCode, body)
+	}
+}
+
 func spotifyPause() {
 	if spotify == nil {
 		fmt.Println("Spotify: not configured")

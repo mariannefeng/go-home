@@ -8,6 +8,7 @@ Restart=always
 RestartSec=5
 User=frodo
 ExecStart=/usr/bin/dbus-run-session /usr/local/bin/spotifyd --no-daemon
+Environment=PULSE_SERVER=unix:/run/user/1000/pulse/native
 
 [Install]
 WantedBy=multi-user.target

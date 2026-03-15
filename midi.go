@@ -14,6 +14,9 @@ const (
 	knobMushroomCC   = 1
 	pitchBendChannel = 0
 
+	ccVolUp   = 105
+	ccVolDown = 104
+
 	dawModeChannel = 15
 	dawModeNote    = 12
 
@@ -125,6 +128,18 @@ func handleMIDI(msg midi.Message, timestampms int32) {
 			fmt.Printf("[%6dms] BRIGHTNESS mushroom lamp  %d%%\n", timestampms, brightness)
 			go setLampBrightness(MUSHROOM_LAMP, brightness)
 			return
+		}
+		if ch == knobChannel && val == 127 {
+			switch cc {
+			case ccVolUp:
+				fmt.Printf("[%6dms] VOL UP\n", timestampms)
+				go spotifyAdjustVolume(10)
+				return
+			case ccVolDown:
+				fmt.Printf("[%6dms] VOL DOWN\n", timestampms)
+				go spotifyAdjustVolume(-10)
+				return
+			}
 		}
 		if ch == transportChannel && val == 127 {
 			switch cc {
