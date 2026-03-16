@@ -1,5 +1,5 @@
 # home midi controller
 
-why not control your home with a midi controller nobody is stopping you
+control your home with a midi controller don't let your dreams be dreams
 
 ![current mapping](assets/configured-keyboard.png)
