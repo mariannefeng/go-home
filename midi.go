@@ -2,9 +2,13 @@ package main
 
 import (
 	"fmt"
+	"sync/atomic"
+	"time"
 
 	"gitlab.com/gomidi/midi/v2"
 )
+
+var padLocked atomic.Bool
 
 const (
 	padChannel       = 9
@@ -42,7 +46,7 @@ const (
 
 var send func(midi.Message) error
 
-func setPadColor(pad, color uint8) {
+func setPadColorDirect(pad, color uint8) {
 	if send == nil {
 		return
 	}
@@ -51,8 +55,15 @@ func setPadColor(pad, color uint8) {
 	}
 }
 
+func setPadColor(pad, color uint8) {
+	if padLocked.Load() {
+		return
+	}
+	setPadColorDirect(pad, color)
+}
+
 func setPadPulse(pad, color uint8) {
-	if send == nil {
+	if padLocked.Load() || send == nil {
 		return
 	}
 	if err := send(midi.NoteOn(padChannelPulse, pad, color)); err != nil {
@@ -62,7 +73,64 @@ func setPadPulse(pad, color uint8) {
 
 func blankAllPads() {
 	for pad := uint8(36); pad <= 51; pad++ {
-		setPadColor(pad, colorOff)
+		setPadColorDirect(pad, colorOff)
+	}
+}
+
+var rainbowPalette = []uint8{5, 9, 13, 21, 33, 45, 53, 57}
+
+func runPadAnimation() {
+	const (
+		duration  = 10 * time.Second
+		frameRate = 50 * time.Millisecond
+	)
+
+	ticker := time.NewTicker(frameRate)
+	defer ticker.Stop()
+
+	deadline := time.After(duration)
+	offset := 0
+
+	for {
+		for i := uint8(0); i < 16; i++ {
+			c := rainbowPalette[(int(i)+offset)%len(rainbowPalette)]
+			setPadColorDirect(36+i, c)
+		}
+		offset++
+
+		select {
+		case <-deadline:
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func restoreAllPadColors() {
+	mu.Lock()
+	if flower, ok := bulbs[FLOWER_LAMP]; ok {
+		setPadColorDirect(padFlowerLamp, lampPadColor(flower.on))
+	} else {
+		setPadColorDirect(padFlowerLamp, colorRed)
+	}
+	if mushroom, ok := bulbs[MUSHROOM_LAMP]; ok {
+		setPadColorDirect(padMushroomLamp, lampPadColor(mushroom.on))
+	} else {
+		setPadColorDirect(padMushroomLamp, colorRed)
+	}
+	mu.Unlock()
+
+	setPadColorDirect(padSpeaker, speakerPadColor(isSpeakerConnected()))
+	setPadColorDirect(padTV, tvPadColor(isTVOn()))
+
+	assigned := map[uint8]bool{
+		padFlowerLamp: true, padMushroomLamp: true,
+		padSpeaker: true, padTV: true,
+	}
+	for pad := uint8(36); pad <= 51; pad++ {
+		if !assigned[pad] {
+			setPadColorDirect(pad, colorOff)
+		}
 	}
 }
 
@@ -89,6 +157,10 @@ func exitDAWMode() {
 }
 
 func handleMIDI(msg midi.Message, timestampms int32) {
+	if padLocked.Load() {
+		return
+	}
+
 	var ch, key, vel, cc, val uint8
 	var pitchRel int16
 	var bt []byte
@@ -132,8 +204,6 @@ func handleMIDI(msg midi.Message, timestampms int32) {
 			case keyPingPhone:
 				fmt.Printf("[%6dms] PING IPHONE\n", timestampms)
 				go pingIPhone()
-
-				// TODO: also make the entire keyboard flash while we're pinging
 				return
 			}
 		}

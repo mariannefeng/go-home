@@ -8,10 +8,15 @@ import (
 )
 
 func pingIPhone() {
+	if !padLocked.CompareAndSwap(false, true) {
+		return
+	}
+
 	email := os.Getenv("ICLOUD_EMAIL")
 	device := os.Getenv("ICLOUD_DEVICE_NAME")
 	if email == "" || device == "" {
 		fmt.Println("  iPhone ping: ICLOUD_EMAIL or ICLOUD_DEVICE_NAME not set")
+		padLocked.Store(false)
 		return
 	}
 
@@ -25,11 +30,17 @@ phone.play_sound()
 print(f'pinged: {phone}')
 `, email, device, device)
 
-	out, err := exec.Command("python3", "-c", script).CombinedOutput()
-	output := strings.TrimSpace(string(out))
-	if err != nil {
-		fmt.Printf("  iPhone ping error: %s (%s)\n", err, output)
-		return
-	}
-	fmt.Printf("  %s\n", output)
+	go func() {
+		out, err := exec.Command("python3", "-c", script).CombinedOutput()
+		output := strings.TrimSpace(string(out))
+		if err != nil {
+			fmt.Printf("  iPhone ping error: %s (%s)\n", err, output)
+		} else {
+			fmt.Printf("  %s\n", output)
+		}
+	}()
+
+	runPadAnimation()
+	padLocked.Store(false)
+	restoreAllPadColors()
 }
