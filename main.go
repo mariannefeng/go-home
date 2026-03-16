@@ -61,12 +61,12 @@ func handleMIDI(msg midi.Message, timestampms int32) {
 	case msg.GetPitchBend(&ch, &pitchRel, nil):
 		for _, b := range pitchBendBindings {
 			if ch == b.ch {
-				fmt.Printf("[%6dms] %s\n", timestampms, b.label)
+				fmt.Printf("[%6dms] %s ch=%d  pitch=%d\n", b.label, timestampms, ch, pitchRel)
 				go b.onChange(pitchRel)
 				return
 			}
 		}
-		fmt.Printf("[%6dms] PitchBend ch=%d  pitch=%d\n", timestampms, ch, pitchRel)
+		fmt.Printf("[%6dms] ch=%d  pitch=%d\n", timestampms, ch, pitchRel)
 
 	case msg.GetControlChange(&ch, &cc, &val):
 		for _, b := range ccBindings {
