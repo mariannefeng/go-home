@@ -8,66 +8,38 @@ import (
 )
 
 const (
-	tvADBAddr = "192.168.1.175:5555"
-	padTV     = 51
+	ADBAddr = "192.168.1.175:5555"
 )
 
-func isTVOn() bool {
-	out, err := exec.Command("adb", "-s", tvADBAddr, "shell", "dumpsys", "power").CombinedOutput()
+func tvIsOn() bool {
+	out, err := exec.Command("adb", "-s", ADBAddr, "shell", "dumpsys", "power").CombinedOutput()
 	if err != nil {
 		return false
 	}
 	return strings.Contains(string(out), "Display Power: state=ON")
 }
 
-func tvPadColor(on bool) uint8 {
-	if on {
-		return colorOn
-	}
-	return colorNotOn
-}
-
-func pollTVStatus(stop <-chan struct{}) {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-stop:
-			return
-		case <-ticker.C:
-			setPadColor(padTV, tvPadColor(isTVOn()))
-		}
-	}
-}
-
-func toggleTVMute() {
-	out, err := exec.Command("adb", "-s", tvADBAddr, "shell", "input", "keyevent", "164").CombinedOutput()
+func tvToggleMute() error {
+	out, err := exec.Command("adb", "-s", ADBAddr, "shell", "input", "keyevent", "164").CombinedOutput()
 	if err != nil {
-		fmt.Printf("  TV mute error: %s (%s)\n", err, strings.TrimSpace(string(out)))
-		return
+		return fmt.Errorf("mute: %w (%s)", err, strings.TrimSpace(string(out)))
 	}
 	fmt.Println("  TV → mute toggled")
+	return nil
 }
 
-func toggleTV() {
-	setPadPulse(padTV, colorPulseLoad)
-
-	wasOn := isTVOn()
-	out, err := exec.Command("adb", "-s", tvADBAddr, "shell", "input", "keyevent", "26").CombinedOutput()
+func tvToggle() (on bool, err error) {
+	wasOn := tvIsOn()
+	out, err := exec.Command("adb", "-s", ADBAddr, "shell", "input", "keyevent", "26").CombinedOutput()
 	if err != nil {
-		fmt.Printf("  TV power error: %s (%s)\n", err, strings.TrimSpace(string(out)))
-		setPadColor(padTV, tvPadColor(isTVOn()))
-		return
+		return tvIsOn(), fmt.Errorf("power: %w (%s)", err, strings.TrimSpace(string(out)))
 	}
-
 	time.Sleep(2 * time.Second)
-	on := isTVOn()
-	setPadColor(padTV, tvPadColor(on))
-
+	on = tvIsOn()
 	state := "OFF"
 	if on {
 		state = "ON"
 	}
 	fmt.Printf("  TV → %s (was %v)\n", state, wasOn)
+	return on, nil
 }

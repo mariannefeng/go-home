@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"gitlab.com/gomidi/midi/v2"
 	_ "gitlab.com/gomidi/midi/v2/drivers/rtmididrv"
@@ -13,92 +14,130 @@ import (
 func main() {
 	defer midi.CloseDriver()
 
-	bulbs = initKasa()
-	initSpotify()
-
-	fmt.Println("Available MIDI input ports:")
-	fmt.Println(midi.GetInPorts())
-	fmt.Println("Available MIDI output ports:")
-	fmt.Println(midi.GetOutPorts())
-	fmt.Println()
-
-	midiIn, err := midi.FindInPort("MIDI Port")
-	if err != nil {
-		fmt.Println("no Launchkey MIDI input port found")
-		os.Exit(1)
-	}
-
-	dawIn, err := midi.FindInPort("DAW")
-	if err != nil {
-		fmt.Println("no Launchkey DAW input port found")
-		os.Exit(1)
-	}
-
-	out, err := midi.FindOutPort("DAW")
-	if err != nil {
-		fmt.Println("no Launchkey DAW output port found")
-		os.Exit(1)
-	}
-
-	send, err = midi.SendTo(out)
-	if err != nil {
-		fmt.Printf("error opening DAW output: %s\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Printf("MIDI input:   %s\n", midiIn)
-	fmt.Printf("DAW input:    %s\n", dawIn)
-	fmt.Printf("DAW output:   %s\n\n", out)
-
-	speakerConnected := isSpeakerConnected()
-	state := "disconnected"
-	if speakerConnected {
-		state = "connected"
-	}
-	fmt.Printf("Speaker (%s): %s\n", speakerName, state)
-
-	tvOn := isTVOn()
-	tvState := "off"
-	if tvOn {
-		tvState = "on"
-	}
-	fmt.Printf("TV (%s): %s\n\n", tvADBAddr, tvState)
-
-	enterDAWMode()
-	blankAllPads()
-	updateLampPads(bulbs)
-	setPadColor(padSpeaker, speakerPadColor(speakerConnected))
-	setPadColor(padTV, tvPadColor(tvOn))
-
-	stopMidi, err := midi.ListenTo(midiIn, handleMIDI, midi.UseSysEx())
-	if err != nil {
-		fmt.Printf("error listening on MIDI port: %s\n", err)
-		exitDAWMode()
-		os.Exit(1)
-	}
-
-	stopDaw, err := midi.ListenTo(dawIn, handleMIDI, midi.UseSysEx())
-	if err != nil {
-		fmt.Printf("error listening on DAW port: %s\n", err)
-		stopMidi()
-		exitDAWMode()
-		os.Exit(1)
-	}
+	kasaInit()
+	spotifyInit()
+	midiInit(handleMIDI)
+	resetPadColors()
 
 	stopPoll := make(chan struct{})
-	go pollSpeakerStatus(stopPoll)
-	go pollLampStatus(stopPoll)
-	go pollTVStatus(stopPoll)
+	startPollers(stopPoll)
 
-	fmt.Println("Ready.")
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 	<-sig
 
 	close(stopPoll)
-	stopMidi()
-	stopDaw()
-	blankAllPads()
-	exitDAWMode()
+	midiStop()
 	fmt.Println("\nStopped.")
+}
+
+func handleMIDI(msg midi.Message, timestampms int32) {
+	// ignore input while keys are locked out (e.g. when pinging phone)
+	if PadLocked.Load() {
+		return
+	}
+
+	var ch, key, vel, cc, val uint8
+	var pitchRel int16
+	var bt []byte
+
+	switch {
+	case msg.GetNoteStart(&ch, &key, &vel):
+		for _, b := range noteBindings {
+			if ch == b.ch && key == b.key {
+				fmt.Printf("[%6dms] %s (vel=%d)\n", timestampms, b.label, vel)
+				go b.press()
+				return
+			}
+		}
+		fmt.Printf("[%6dms] NoteOn    ch=%d  key=%3d  vel=%3d  (%s)\n",
+			timestampms, ch, key, vel, midi.Note(key))
+
+	case msg.GetNoteEnd(&ch, &key):
+		fmt.Printf("[%6dms] (Ignoring) NoteOff   ch=%d  key=%3d  (%s)\n",
+			timestampms, ch, key, midi.Note(key))
+		return
+
+	case msg.GetPitchBend(&ch, &pitchRel, nil):
+		for _, b := range pitchBendBindings {
+			if ch == b.ch {
+				fmt.Printf("[%6dms] %s\n", timestampms, b.label)
+				go b.onChange(pitchRel)
+				return
+			}
+		}
+		fmt.Printf("[%6dms] PitchBend ch=%d  pitch=%d\n", timestampms, ch, pitchRel)
+
+	case msg.GetControlChange(&ch, &cc, &val):
+		for _, b := range ccBindings {
+			if ch == b.ch && cc == b.cc {
+				if b.onAny != nil {
+					fmt.Printf("[%6dms] %s  %d\n", timestampms, b.label, val)
+					go b.onAny(val)
+					return
+				}
+				if b.onMax != nil && val == 127 {
+					fmt.Printf("[%6dms] %s\n", timestampms, b.label)
+					go b.onMax()
+					return
+				}
+			}
+		}
+		fmt.Printf("[%6dms] CC        ch=%d  cc=%3d   val=%3d\n", timestampms, ch, cc, val)
+
+	case msg.GetAfterTouch(&ch, &val):
+		fmt.Printf("[%6dms] AfterTch  ch=%d  val=%3d\n", timestampms, ch, val)
+
+	case msg.GetSysEx(&bt):
+		fmt.Printf("[%6dms] SysEx     % X\n", timestampms, bt)
+
+	default:
+		fmt.Printf("[%6dms] Other     %v\n", timestampms, msg)
+	}
+}
+
+func resetPadColors() {
+	states := kasaGetBulbStates()
+	midiSetPadColorDirect(midiControls.PadFlowerLamp, midiPadColorForState(states[FlowerLamp]))
+	midiSetPadColorDirect(midiControls.PadMushroomLamp, midiPadColorForState(states[MushroomLamp]))
+	midiSetPadColorDirect(midiControls.PadSpeaker, midiPadColorForState(bluetoothIsConnected()))
+	midiSetPadColorDirect(midiControls.PadTV, midiPadColorForState(tvIsOn()))
+
+	// turn off unused pads
+	assigned := map[uint8]bool{
+		midiControls.PadFlowerLamp: true, midiControls.PadMushroomLamp: true,
+		midiControls.PadSpeaker: true, midiControls.PadTV: true,
+	}
+	for pad := uint8(36); pad <= 51; pad++ {
+		if !assigned[pad] {
+			midiSetPadColorDirect(pad, ColorOff)
+		}
+	}
+}
+
+func pollEvery(interval time.Duration, stop <-chan struct{}, update func()) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+			update()
+		}
+	}
+}
+
+func startPollers(stop <-chan struct{}) {
+	go pollEvery(30*time.Second, stop, func() {
+		midiSetPadColor(midiControls.PadSpeaker, midiPadColorForState(bluetoothIsConnected()))
+	})
+	go pollEvery(30*time.Second, stop, func() {
+		states := kasaRefresh()
+		midiSetPadColor(midiControls.PadFlowerLamp, midiPadColorForState(states[FlowerLamp]))
+		midiSetPadColor(midiControls.PadMushroomLamp, midiPadColorForState(states[MushroomLamp]))
+	})
+	go pollEvery(30*time.Second, stop, func() {
+		midiSetPadColor(midiControls.PadTV, midiPadColorForState(tvIsOn()))
+	})
 }

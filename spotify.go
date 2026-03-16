@@ -23,7 +23,7 @@ var defaultPlaylists = []string{
 	"spotify:playlist:37i9dQZF1E37eOsAQc1AyM", // Daily Mix 6
 }
 
-type spotifyClient struct {
+type client struct {
 	clientID     string
 	clientSecret string
 	refreshToken string
@@ -34,9 +34,9 @@ type spotifyClient struct {
 	tokenExpiry time.Time
 }
 
-var spotify *spotifyClient
+var c *client
 
-func initSpotify() {
+func spotifyInit() {
 	id := os.Getenv("SPOTIFY_CLIENT_ID")
 	secret := os.Getenv("SPOTIFY_CLIENT_SECRET")
 	refresh := os.Getenv("SPOTIFY_REFRESH_TOKEN")
@@ -46,29 +46,26 @@ func initSpotify() {
 		fmt.Println("Spotify: missing SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET, or SPOTIFY_REFRESH_TOKEN — disabled")
 		return
 	}
-	if device == "" {
-		device = "sauron"
-	}
 
-	spotify = &spotifyClient{
+	c = &client{
 		clientID:     id,
 		clientSecret: secret,
 		refreshToken: refresh,
 		deviceName:   device,
 	}
 
-	if err := spotify.refresh(); err != nil {
+	if err := c.refresh(); err != nil {
 		fmt.Printf("Spotify: initial token refresh failed: %s — disabled\n", err)
-		spotify = nil
+		c = nil
 		return
 	}
 	fmt.Printf("Spotify: authenticated (device=%q)\n\n", device)
 }
 
-func (s *spotifyClient) refresh() error {
+func (c *client) refresh() error {
 	data := url.Values{
 		"grant_type":    {"refresh_token"},
-		"refresh_token": {s.refreshToken},
+		"refresh_token": {c.refreshToken},
 	}
 
 	req, err := http.NewRequest("POST", "https://accounts.spotify.com/api/token", strings.NewReader(data.Encode()))
@@ -77,7 +74,7 @@ func (s *spotifyClient) refresh() error {
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString(
-		[]byte(s.clientID+":"+s.clientSecret),
+		[]byte(c.clientID+":"+c.clientSecret),
 	))
 
 	resp, err := http.DefaultClient.Do(req)
@@ -99,34 +96,34 @@ func (s *spotifyClient) refresh() error {
 		return err
 	}
 
-	s.mu.Lock()
-	s.accessToken = result.AccessToken
-	s.tokenExpiry = time.Now().Add(time.Duration(result.ExpiresIn-60) * time.Second)
-	s.mu.Unlock()
+	c.mu.Lock()
+	c.accessToken = result.AccessToken
+	c.tokenExpiry = time.Now().Add(time.Duration(result.ExpiresIn-60) * time.Second)
+	c.mu.Unlock()
 
 	return nil
 }
 
-func (s *spotifyClient) token() (string, error) {
-	s.mu.Lock()
-	if time.Now().Before(s.tokenExpiry) {
-		t := s.accessToken
-		s.mu.Unlock()
+func (c *client) token() (string, error) {
+	c.mu.Lock()
+	if time.Now().Before(c.tokenExpiry) {
+		t := c.accessToken
+		c.mu.Unlock()
 		return t, nil
 	}
-	s.mu.Unlock()
+	c.mu.Unlock()
 
-	if err := s.refresh(); err != nil {
+	if err := c.refresh(); err != nil {
 		return "", err
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.accessToken, nil
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.accessToken, nil
 }
 
-func (s *spotifyClient) apiRequest(method, path string, body io.Reader) (*http.Response, error) {
-	tok, err := s.token()
+func (c *client) apiRequest(method, path string, body io.Reader) (*http.Response, error) {
+	tok, err := c.token()
 	if err != nil {
 		return nil, fmt.Errorf("auth: %w", err)
 	}
@@ -143,8 +140,8 @@ func (s *spotifyClient) apiRequest(method, path string, body io.Reader) (*http.R
 	return http.DefaultClient.Do(req)
 }
 
-func (s *spotifyClient) findDeviceID() (string, error) {
-	resp, err := s.apiRequest("GET", "/me/player/devices", nil)
+func (c *client) findDeviceID() (string, error) {
+	resp, err := c.apiRequest("GET", "/me/player/devices", nil)
 	if err != nil {
 		return "", err
 	}
@@ -161,7 +158,7 @@ func (s *spotifyClient) findDeviceID() (string, error) {
 	}
 
 	for _, d := range result.Devices {
-		if strings.EqualFold(d.Name, s.deviceName) {
+		if strings.EqualFold(d.Name, c.deviceName) {
 			return d.ID, nil
 		}
 	}
@@ -169,11 +166,11 @@ func (s *spotifyClient) findDeviceID() (string, error) {
 	for i, d := range result.Devices {
 		names[i] = d.Name
 	}
-	return "", fmt.Errorf("device %q not found (available: %v)", s.deviceName, names)
+	return "", fmt.Errorf("device %q not found (available: %v)", c.deviceName, names)
 }
 
-func (s *spotifyClient) hasActivePlayback() bool {
-	resp, err := s.apiRequest("GET", "/me/player", nil)
+func (c *client) hasActivePlayback() bool {
+	resp, err := c.apiRequest("GET", "/me/player", nil)
 	if err != nil {
 		return false
 	}
@@ -193,19 +190,19 @@ func (s *spotifyClient) hasActivePlayback() bool {
 }
 
 func spotifyPlay() {
-	if spotify == nil {
+	if c == nil {
 		fmt.Println("Spotify: not configured")
 		return
 	}
 
-	deviceID, err := spotify.findDeviceID()
+	deviceID, err := c.findDeviceID()
 	if err != nil {
 		fmt.Printf("Spotify play error: %s\n", err)
 		return
 	}
 
-	if spotify.hasActivePlayback() {
-		resp, err := spotify.apiRequest("PUT", "/me/player/play?device_id="+deviceID, nil)
+	if c.hasActivePlayback() {
+		resp, err := c.apiRequest("PUT", "/me/player/play?device_id="+deviceID, nil)
 		if err != nil {
 			fmt.Printf("Spotify play error: %s\n", err)
 			return
@@ -219,7 +216,7 @@ func spotifyPlay() {
 	fmt.Printf("  Spotify: nothing active, starting %s\n", playlist)
 
 	body := fmt.Sprintf(`{"context_uri":"%s"}`, playlist)
-	resp, err := spotify.apiRequest("PUT", "/me/player/play?device_id="+deviceID, strings.NewReader(body))
+	resp, err := c.apiRequest("PUT", "/me/player/play?device_id="+deviceID, strings.NewReader(body))
 	if err != nil {
 		fmt.Printf("Spotify play error: %s\n", err)
 		return
@@ -235,12 +232,12 @@ func spotifyPlay() {
 }
 
 func spotifyAdjustVolume(delta int) {
-	if spotify == nil {
+	if c == nil {
 		fmt.Println("Spotify: not configured")
 		return
 	}
 
-	resp, err := spotify.apiRequest("GET", "/me/player", nil)
+	resp, err := c.apiRequest("GET", "/me/player", nil)
 	if err != nil {
 		fmt.Printf("Spotify volume error: %s\n", err)
 		return
@@ -271,7 +268,7 @@ func spotifyAdjustVolume(delta int) {
 	}
 
 	path := fmt.Sprintf("/me/player/volume?volume_percent=%d", vol)
-	vResp, err := spotify.apiRequest("PUT", path, nil)
+	vResp, err := c.apiRequest("PUT", path, nil)
 	if err != nil {
 		fmt.Printf("Spotify volume error: %s\n", err)
 		return
@@ -287,12 +284,12 @@ func spotifyAdjustVolume(delta int) {
 }
 
 func spotifyNext() {
-	if spotify == nil {
+	if c == nil {
 		fmt.Println("Spotify: not configured")
 		return
 	}
 
-	resp, err := spotify.apiRequest("POST", "/me/player/next", nil)
+	resp, err := c.apiRequest("POST", "/me/player/next", nil)
 	if err != nil {
 		fmt.Printf("Spotify next error: %s\n", err)
 		return
@@ -308,12 +305,12 @@ func spotifyNext() {
 }
 
 func spotifyPrev() {
-	if spotify == nil {
+	if c == nil {
 		fmt.Println("Spotify: not configured")
 		return
 	}
 
-	resp, err := spotify.apiRequest("POST", "/me/player/previous", nil)
+	resp, err := c.apiRequest("POST", "/me/player/previous", nil)
 	if err != nil {
 		fmt.Printf("Spotify prev error: %s\n", err)
 		return
@@ -329,12 +326,12 @@ func spotifyPrev() {
 }
 
 func spotifyPause() {
-	if spotify == nil {
+	if c == nil {
 		fmt.Println("Spotify: not configured")
 		return
 	}
 
-	resp, err := spotify.apiRequest("PUT", "/me/player/pause", nil)
+	resp, err := c.apiRequest("PUT", "/me/player/pause", nil)
 	if err != nil {
 		fmt.Printf("Spotify pause error: %s\n", err)
 		return

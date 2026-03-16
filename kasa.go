@@ -8,22 +8,22 @@ import (
 	"sync"
 	"time"
 
-	kasa "github.com/cloudkucooland/go-kasa"
+	"github.com/cloudkucooland/go-kasa"
 )
 
 const (
-	MUSHROOM_LAMP    = "Mushroom bulb"
-	MUSHROOM_LAMP_IP = "192.168.1.160"
-	FLOWER_LAMP      = "Flower lamp"
-	FLOWER_LAMP_IP   = "192.168.1.153"
+	MushroomLamp   = "Mushroom bulb"
+	MushroomLampIP = "192.168.1.160"
+	FlowerLamp     = "Flower lamp"
+	FlowerLampIP   = "192.168.1.153"
 )
 
 var knownBulbs = []struct {
 	alias string
 	ip    string
 }{
-	{FLOWER_LAMP, FLOWER_LAMP_IP},
-	{MUSHROOM_LAMP, MUSHROOM_LAMP_IP},
+	{FlowerLamp, FlowerLampIP},
+	{MushroomLamp, MushroomLampIP},
 }
 
 var (
@@ -38,9 +38,9 @@ type bulbState struct {
 	brightness uint8
 }
 
-func initKasa() map[string]bulbState {
+func kasaInit() {
 	fmt.Println("Connecting to Kasa bulbs...")
-	result := make(map[string]bulbState)
+	bulbs = make(map[string]bulbState)
 
 	for _, kb := range knownBulbs {
 		ls, err := queryLightState(kb.ip)
@@ -56,7 +56,7 @@ func initKasa() map[string]bulbState {
 		}
 		fmt.Printf("  %s (%s): %s  brightness=%d%%\n", kb.alias, kb.ip, state, ls.Brightness)
 
-		result[kb.alias] = bulbState{
+		bulbs[kb.alias] = bulbState{
 			alias:      kb.alias,
 			ip:         kb.ip,
 			on:         on,
@@ -64,129 +64,90 @@ func initKasa() map[string]bulbState {
 		}
 	}
 	fmt.Println()
+}
+
+func kasaGetBulbStates() map[string]bool {
+	mu.Lock()
+	defer mu.Unlock()
+	result := make(map[string]bool)
+	for alias, b := range bulbs {
+		result[alias] = b.on
+	}
 	return result
 }
 
-func lampPadColor(on bool) uint8 {
-	if on {
-		return colorOn
-	}
-	return colorNotOn
-}
-
-func updateLampPads(bulbs map[string]bulbState) {
-	if flower, ok := bulbs[FLOWER_LAMP]; ok {
-		setPadColor(padFlowerLamp, lampPadColor(flower.on))
-	} else {
-		setPadColor(padFlowerLamp, colorRed)
-	}
-
-	if mushroom, ok := bulbs[MUSHROOM_LAMP]; ok {
-		setPadColor(padMushroomLamp, lampPadColor(mushroom.on))
-	} else {
-		setPadColor(padMushroomLamp, colorRed)
-	}
-}
-
-func pollLampStatus(stop <-chan struct{}) {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-stop:
-			return
-		case <-ticker.C:
-			for _, kb := range knownBulbs {
-				ls, err := queryLightState(kb.ip)
-				if err != nil {
-					continue
-				}
-				on := ls.OnOff == 1
-				mu.Lock()
-				b := bulbs[kb.alias]
-				b.alias = kb.alias
-				b.ip = kb.ip
-				b.on = on
-				b.brightness = ls.Brightness
-				bulbs[kb.alias] = b
-				mu.Unlock()
-			}
-			mu.Lock()
-			updateLampPads(bulbs)
-			mu.Unlock()
+func kasaRefresh() map[string]bool {
+	for _, kb := range knownBulbs {
+		ls, err := queryLightState(kb.ip)
+		if err != nil {
+			continue
 		}
+		on := ls.OnOff == 1
+		mu.Lock()
+		b := bulbs[kb.alias]
+		b.alias = kb.alias
+		b.ip = kb.ip
+		b.on = on
+		b.brightness = ls.Brightness
+		bulbs[kb.alias] = b
+		mu.Unlock()
 	}
+	return kasaGetBulbStates()
 }
 
-func toggleLamp(alias string, pad uint8) {
+func kasaToggleLamp(alias string) (on bool, err error) {
 	mu.Lock()
-	defer mu.Unlock()
-
 	b, ok := bulbs[alias]
 	if !ok {
-		fmt.Printf("lamp %q not in cache, querying directly...\n", alias)
 		mu.Unlock()
-		fresh := initKasa()
+		kasaRefresh()
 		mu.Lock()
-		for k, v := range fresh {
-			bulbs[k] = v
-		}
 		b, ok = bulbs[alias]
 		if !ok {
-			fmt.Printf("lamp %q still unreachable\n", alias)
-			return
+			mu.Unlock()
+			return false, fmt.Errorf("lamp %q unreachable", alias)
 		}
-		updateLampPads(bulbs)
 	}
 
 	newState := !b.on
 	if err := setLightState(b.ip, newState); err != nil {
-		fmt.Printf("error toggling %s: %s\n", alias, err)
-		return
+		return b.on, err
 	}
 
 	b.on = newState
 	bulbs[alias] = b
-
-	setPadColor(pad, lampPadColor(newState))
+	mu.Unlock()
 
 	state := "OFF"
 	if newState {
 		state = "ON"
 	}
 	fmt.Printf("  %s → %s\n", alias, state)
+	return newState, nil
 }
 
 var lastBrightnessSend sync.Map
 
-var lampPads = map[string]uint8{
-	FLOWER_LAMP:   padFlowerLamp,
-	MUSHROOM_LAMP: padMushroomLamp,
-}
-
-func setLampBrightness(alias string, brightness int) {
+func kasaSetBrightness(alias string, brightness int) (on bool, err error) {
 	mu.Lock()
 	b, ok := bulbs[alias]
 	mu.Unlock()
 	if !ok {
-		return
+		return false, nil
 	}
 
 	if last, ok := lastBrightnessSend.Load(alias); ok {
 		if time.Since(last.(time.Time)) < 100*time.Millisecond {
-			return
+			return b.on, nil
 		}
 	}
 	lastBrightnessSend.Store(alias, time.Now())
 
 	if err := setLightBrightness(b.ip, brightness); err != nil {
-		fmt.Printf("error setting brightness for %s: %s\n", alias, err)
-		return
+		return b.on, err
 	}
 
 	newOn := brightness > 0
-	wasOn := b.on
 
 	mu.Lock()
 	b.brightness = uint8(brightness)
@@ -194,11 +155,7 @@ func setLampBrightness(alias string, brightness int) {
 	bulbs[alias] = b
 	mu.Unlock()
 
-	if newOn != wasOn {
-		if pad, ok := lampPads[alias]; ok {
-			setPadColor(pad, lampPadColor(newOn))
-		}
-	}
+	return newOn, nil
 }
 
 // --- Raw Kasa TCP protocol ---

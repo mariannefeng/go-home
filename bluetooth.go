@@ -4,73 +4,40 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
-	"time"
 )
 
 const (
-	speakerMAC  = "2C:41:A1:6D:9A:FE"
-	speakerName = "Deep Space Fine"
-
-	padSpeaker = 47
+	SpeakerMAC  = "2C:41:A1:6D:9A:FE"
+	SpeakerName = "Deep Space Fine"
 )
 
-func isSpeakerConnected() bool {
-	out, err := exec.Command("bluetoothctl", "info", speakerMAC).CombinedOutput()
+func bluetoothIsConnected() bool {
+	out, err := exec.Command("bluetoothctl", "info", SpeakerMAC).CombinedOutput()
 	if err != nil {
 		return false
 	}
 	return strings.Contains(string(out), "Connected: yes")
 }
 
-func speakerPadColor(connected bool) uint8 {
-	if connected {
-		return colorOn
-	}
-	return colorNotOn
-}
-
-func pollSpeakerStatus(stop <-chan struct{}) {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-stop:
-			return
-		case <-ticker.C:
-			connected := isSpeakerConnected()
-			setPadColor(padSpeaker, speakerPadColor(connected))
-		}
-	}
-}
-
-func toggleSpeaker() {
-	setPadPulse(padSpeaker, colorPulseLoad)
-
-	if isSpeakerConnected() {
-		fmt.Printf("  %s: disconnecting...\n", speakerName)
-		out, err := exec.Command("bluetoothctl", "disconnect", speakerMAC).CombinedOutput()
+func bluetoothToggle() (connected bool, err error) {
+	if bluetoothIsConnected() {
+		fmt.Printf("  %s: disconnecting...\n", SpeakerName)
+		out, err := exec.Command("bluetoothctl", "disconnect", SpeakerMAC).CombinedOutput()
 		if err != nil {
-			fmt.Printf("  disconnect error: %s (%s)\n", err, strings.TrimSpace(string(out)))
-			setPadColor(padSpeaker, speakerPadColor(isSpeakerConnected()))
-			return
+			return bluetoothIsConnected(), fmt.Errorf("disconnect: %w (%s)", err, strings.TrimSpace(string(out)))
 		}
-		fmt.Printf("  %s → disconnected\n", speakerName)
-		setPadColor(padSpeaker, colorNotOn)
-	} else {
-		fmt.Printf("  %s: connecting...\n", speakerName)
-		out, err := exec.Command("bluetoothctl", "connect", speakerMAC).CombinedOutput()
-		if err != nil {
-			fmt.Printf("  connect error: %s (%s)\n", err, strings.TrimSpace(string(out)))
-			setPadColor(padSpeaker, speakerPadColor(isSpeakerConnected()))
-			return
-		}
-		if strings.Contains(string(out), "Connection successful") {
-			fmt.Printf("  %s → connected\n", speakerName)
-			setPadColor(padSpeaker, colorOn)
-		} else {
-			fmt.Printf("  connect result: %s\n", strings.TrimSpace(string(out)))
-			setPadColor(padSpeaker, speakerPadColor(isSpeakerConnected()))
-		}
+		fmt.Printf("  %s → disconnected\n", SpeakerName)
+		return false, nil
 	}
+	fmt.Printf("  %s: connecting...\n", SpeakerName)
+	out, err := exec.Command("bluetoothctl", "connect", SpeakerMAC).CombinedOutput()
+	if err != nil {
+		return bluetoothIsConnected(), fmt.Errorf("connect: %w (%s)", err, strings.TrimSpace(string(out)))
+	}
+	if strings.Contains(string(out), "Connection successful") {
+		fmt.Printf("  %s → connected\n", SpeakerName)
+		return true, nil
+	}
+	fmt.Printf("  connect result: %s\n", strings.TrimSpace(string(out)))
+	return bluetoothIsConnected(), nil
 }

@@ -7,17 +7,11 @@ import (
 	"strings"
 )
 
-func pingIPhone() {
-	if !padLocked.CompareAndSwap(false, true) {
-		return
-	}
-
+func phonePing() error {
 	email := os.Getenv("ICLOUD_EMAIL")
 	device := os.Getenv("ICLOUD_DEVICE_NAME")
 	if email == "" || device == "" {
-		fmt.Println("  iPhone ping: ICLOUD_EMAIL or ICLOUD_DEVICE_NAME not set")
-		padLocked.Store(false)
-		return
+		return fmt.Errorf("ICLOUD_EMAIL or ICLOUD_DEVICE_NAME not set")
 	}
 
 	script := fmt.Sprintf(`
@@ -40,7 +34,5 @@ print(f'pinged: {phone}')
 		}
 	}()
 
-	runPadAnimation()
-	padLocked.Store(false)
-	restoreAllPadColors()
+	return nil
 }
