@@ -132,6 +132,8 @@ func handleMIDI(msg midi.Message, timestampms int32) {
 			case keyPingPhone:
 				fmt.Printf("[%6dms] PING IPHONE\n", timestampms)
 				go pingIPhone()
+
+				// TODO: also make the entire keyboard flash while we're pinging
 				return
 			}
 		}

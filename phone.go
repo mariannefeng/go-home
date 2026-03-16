@@ -14,15 +14,20 @@ func pingIPhone() {
 		return
 	}
 
-	cmd := fmt.Sprintf(
-		"from pyicloud import PyiCloudService; api = PyiCloudService('%s'); api.iphone.play_sound()",
-		email,
-	)
-	out, err := exec.Command("python3", "-c", cmd).CombinedOutput()
+	script := fmt.Sprintf(`
+from pyicloud import PyiCloudService
+api = PyiCloudService('%s')
+for i, d in enumerate(api.devices):
+    print(f'  device {i}: {d}')
+print(f'  iphone shortcut: {api.iphone}')
+api.iphone.play_sound()
+`, email)
+
+	out, err := exec.Command("python3", "-c", script).CombinedOutput()
 	output := strings.TrimSpace(string(out))
 	if err != nil {
 		fmt.Printf("  iPhone ping error: %s (%s)\n", err, output)
 		return
 	}
-	fmt.Println("  iPhone → ping sent")
+	fmt.Printf("  %s\n  iPhone → ping sent\n", output)
 }
