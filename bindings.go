@@ -79,7 +79,13 @@ var noteBindings = []noteBinding{
 
 var ccBindings = []ccBinding{
 	{KnobChannel, midiControls.BrightnessMushroomLamp, "BRIGHTNESS MUSHROOM LAMP", nil, func(val uint8) {
-		brightness := 100 - int(val)*100/127
+		v := int(val)
+		brightness := 100
+
+		if v > MUSHROOM_THRESHOLD {
+			brightness = 100 - (v-MUSHROOM_THRESHOLD)*100/(127-MUSHROOM_THRESHOLD)
+		}
+
 		on, err := kasaSetBrightness(MushroomLamp, brightness)
 		if err == nil {
 			midiSetPadColor(midiControls.PadMushroomLamp, midiPadColorForState(on))
@@ -93,10 +99,20 @@ var ccBindings = []ccBinding{
 
 var pitchBendBindings = []pitchBendBinding{
 	{PitchBendChannel, "BRIGHTNESS FLOWER LAMP", func(rel int16) {
-		brightness := 100 - int(rel+8192)*100/16383
+		v := int(rel + 8192)
+		brightness := 100
+
+		// if we're above brightness threshold, decrease brightness relative to remaining pitch range
+		if v > FLOWER_THRESHOLD {
+			brightness = 100 - (v-FLOWER_THRESHOLD)*100/(16383-FLOWER_THRESHOLD)
+		}
+
 		on, err := kasaSetBrightness(FlowerLamp, brightness)
 		if err == nil {
 			midiSetPadColor(midiControls.PadFlowerLamp, midiPadColorForState(on))
 		}
 	}},
 }
+
+const FLOWER_THRESHOLD = 2457 // about ~15% of pitch range
+const MUSHROOM_THRESHOLD = 20 // about ~15% of other slidey
