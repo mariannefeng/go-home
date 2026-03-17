@@ -169,24 +169,36 @@ func (c *client) findDeviceID() (string, error) {
 	return "", fmt.Errorf("device %q not found (available: %v)", c.deviceName, names)
 }
 
-func (c *client) hasActivePlayback() bool {
+// playbackState holds the result of GET /me/player. Zero value means no active playback (204 or error).
+func (c *client) getPlaybackState() (deviceID, deviceName string, hasItem, isPlaying bool) {
 	resp, err := c.apiRequest("GET", "/me/player", nil)
 	if err != nil {
-		return false
+		return "", "", false, false
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == 204 {
-		return false
+		return "", "", false, false
 	}
 
 	var state struct {
-		Item *json.RawMessage `json:"item"`
+		Device *struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"device"`
+		Item      *json.RawMessage `json:"item"`
+		IsPlaying bool             `json:"is_playing"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&state); err != nil {
-		return false
+		return "", "", false, false
 	}
-	return state.Item != nil
+	hasItem = state.Item != nil
+	isPlaying = state.IsPlaying
+	if state.Device != nil {
+		deviceID = state.Device.ID
+		deviceName = state.Device.Name
+	}
+	return deviceID, deviceName, hasItem, isPlaying
 }
 
 func spotifyPlay() {
@@ -195,28 +207,54 @@ func spotifyPlay() {
 		return
 	}
 
-	deviceID, err := c.findDeviceID()
+	deviceID, _, hasItem, isPlaying := c.getPlaybackState()
+
+	// Already playing somewhere — do nothing.
+	if isPlaying {
+		return
+	}
+
+	btConnected := bluetoothIsConnected()
+
+	if !btConnected {
+		// Bluetooth not connected: only resume on the existing device if there's paused playback.
+		if hasItem && deviceID != "" {
+			resp, err := c.apiRequest("PUT", "/me/player/play?device_id="+deviceID, nil)
+			if err != nil {
+				fmt.Printf("Spotify play error: %s\n", err)
+				return
+			}
+			resp.Body.Close()
+			fmt.Println("  Spotify → playing (resumed on current device)")
+		}
+		return
+	}
+
+	// Bluetooth connected: play on sauron.
+	sauronID, err := c.findDeviceID()
 	if err != nil {
 		fmt.Printf("Spotify play error: %s\n", err)
 		return
 	}
 
-	if c.hasActivePlayback() {
-		resp, err := c.apiRequest("PUT", "/me/player/play?device_id="+deviceID, nil)
+	if hasItem {
+		// Paused playback exists — transfer to sauron and resume.
+		resp, err := c.apiRequest("PUT", "/me/player/play?device_id="+sauronID, nil)
 		if err != nil {
 			fmt.Printf("Spotify play error: %s\n", err)
 			return
 		}
 		resp.Body.Close()
-		fmt.Println("  Spotify → playing (resumed)")
+		fmt.Println("  Spotify → playing on sauron (resumed)")
 		return
 	}
 
+	// No active playback — start a random Daily Mix on sauron.
 	playlist := defaultPlaylists[rand.Intn(len(defaultPlaylists))]
 	fmt.Printf("  Spotify: nothing active, starting %s\n", playlist)
 
 	body := fmt.Sprintf(`{"context_uri":"%s"}`, playlist)
-	resp, err := c.apiRequest("PUT", "/me/player/play?device_id="+deviceID, strings.NewReader(body))
+	resp, err := c.apiRequest("PUT", "/me/player/play?device_id="+sauronID, strings.NewReader(body))
 	if err != nil {
 		fmt.Printf("Spotify play error: %s\n", err)
 		return
