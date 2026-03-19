@@ -140,6 +140,20 @@ func (c *client) apiRequest(method, path string, body io.Reader) (*http.Response
 	return http.DefaultClient.Do(req)
 }
 
+// transferToDevice makes the given device the active one. If play is true, playback starts on that device.
+func (c *client) transferToDevice(deviceID string, play bool) error {
+	body := fmt.Sprintf(`{"device_ids":["%s"],"play":%t}`, deviceID, play)
+	resp, err := c.apiRequest("PUT", "/me/player", strings.NewReader(body))
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 204 {
+		return fmt.Errorf("transfer playback HTTP %d", resp.StatusCode)
+	}
+	return nil
+}
+
 func (c *client) findDeviceID() (string, error) {
 	resp, err := c.apiRequest("GET", "/me/player/devices", nil)
 	if err != nil {
@@ -219,12 +233,10 @@ func spotifyPlay() {
 	if !btConnected {
 		// Bluetooth not connected: only resume on the existing device if there's paused playback.
 		if hasItem && deviceID != "" {
-			resp, err := c.apiRequest("PUT", "/me/player/play?device_id="+deviceID, nil)
-			if err != nil {
+			if err := c.transferToDevice(deviceID, true); err != nil {
 				fmt.Printf("Spotify play error: %s\n", err)
 				return
 			}
-			resp.Body.Close()
 			fmt.Println("  Spotify → playing (resumed on current device)")
 		}
 		return
@@ -238,18 +250,28 @@ func spotifyPlay() {
 	}
 
 	if hasItem {
-		// Paused playback exists — transfer to sauron and resume.
-		resp, err := c.apiRequest("PUT", "/me/player/play?device_id="+sauronID, nil)
+		// Paused playback exists — transfer to sauron and resume (one call makes sauron active + starts playback).
+		transferBody := fmt.Sprintf(`{"device_ids":["%s"],"play":true}`, sauronID)
+		resp, err := c.apiRequest("PUT", "/me/player", strings.NewReader(transferBody))
 		if err != nil {
 			fmt.Printf("Spotify play error: %s\n", err)
 			return
 		}
 		resp.Body.Close()
-		fmt.Println("  Spotify → playing on sauron (resumed)")
+		if resp.StatusCode == 204 {
+			fmt.Println("  Spotify → playing on sauron (resumed)")
+		} else {
+			respBody, _ := io.ReadAll(resp.Body)
+			fmt.Printf("  Spotify transfer/resume HTTP %d: %s\n", resp.StatusCode, respBody)
+		}
 		return
 	}
 
-	// No active playback — start a random Daily Mix on sauron.
+	// No active playback — transfer to sauron then start a random Daily Mix.
+	if err := c.transferToDevice(sauronID, false); err != nil {
+		fmt.Printf("Spotify play error: %s\n", err)
+		return
+	}
 	playlist := defaultPlaylists[rand.Intn(len(defaultPlaylists))]
 	fmt.Printf("  Spotify: nothing active, starting %s\n", playlist)
 

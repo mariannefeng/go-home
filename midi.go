@@ -25,7 +25,7 @@ const (
 
 	ColorOff   = 0
 	ColorOn    = 21
-	ColorNotOn = 13
+	ColorNotOn = 53
 
 	ColorPulseLoad = 45
 )
