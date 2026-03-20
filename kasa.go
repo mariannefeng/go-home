@@ -1,10 +1,17 @@
 package main
 
 import (
+	"crypto/tls"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
+	"net/url"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,6 +28,9 @@ const (
 	LIVING_ROOMIP = "192.168.1.156"
 	OFFICE        = "awwfice"
 	OFFICEIP      = "192.168.1.151"
+
+	KasaCamHTTPSPort = 10443
+	KasaCamHTTPSPath = "/data/LINKIE.json"
 )
 
 var knownBulbs = []struct {
@@ -202,8 +212,8 @@ func kasaInitCameras() {
 	}
 
 	for i := range cameras {
-		fmt.Printf("  CAMERA %d: alias=%q ip=%s model=%s on=%t\n",
-			i+1, cameras[i].info.alias, cameras[i].info.ip, cameras[i].info.model, cameras[i].on)
+		fmt.Printf("alias=%q ip=%s model=%s on=%t\n",
+			cameras[i].info.alias, cameras[i].info.ip, cameras[i].info.model, cameras[i].on)
 	}
 	fmt.Println()
 }
@@ -358,8 +368,9 @@ const (
 	// Intended to mirror the python-kasa proto shape:
 	//   smartlife.cam.ipcamera.switch -> set_is_enable -> (system.get_sysinfo.camera_switch = x["value"])
 	// cmdSetCameraEnableOn  = `{"smartlife.cam.ipcamera.switch":{"set_is_enable":{"system":{"get_sysinfo":{"camera_switch":"on"}}}}}`
-	cmdSetCameraEnableOn  = `{"smartlife.cam.ipcamera.switch":{"set_is_enable":{"system":{"get_sysinfo":{ "system": {"camera_switch":"on"}}}}}}`
-	cmdSetCameraEnableOff = `{"smartlife.cam.ipcamera.switch":{"set_is_enable":{"system":{"get_sysinfo":{"camera_switch":"off"}}}}}`
+	cmdSetCameraEnableOn = `{"smartlife.cam.ipcamera.switch":{"set_is_enable":{"value":"on"}}}`
+	// cmdSetCameraEnableOff = `{"smartlife.cam.ipcamera.switch":{"set_is_enable":{"system":{"get_sysinfo":{"camera_switch":"off"}}}}}`
+	cmdSetCameraEnableOff = `{"smartlife.cam.ipcamera.switch":{"set_is_enable":{"value":"off"}}}`
 )
 
 func queryLightState(ip string) (*lightState, error) {
@@ -525,7 +536,7 @@ func setCameraOn(ip string, on bool) error {
 	}
 
 	fmt.Printf("  trying camera cmd to ip=%s cmd=%s\n", ip, cmd)
-	if err := sendKasaUDPCommand(ip, cmd); err != nil {
+	if err := sendKasaCamHTTPSCommand(ip, cmd); err != nil {
 		return err
 	}
 
@@ -539,6 +550,103 @@ func setCameraOn(ip string, on bool) error {
 		return qerr
 	}
 	return fmt.Errorf("verification mismatch after camera cmd (got on=%t desired on=%t)", currentOn, on)
+}
+
+func sendKasaCamHTTPSCommand(ip, plaintextRequest string) error {
+	// python-kasa PR #537 does:
+	// - encrypted_cmd = SmartCameraProtocol.encrypt(request)[4:]
+	// - b64_cmd = base64(encrypted_cmd)
+	// - url_safe_cmd = quote(b64_cmd)
+	// - POST /data/LINKIE.json with form body "content=<url_safe_cmd>"
+	//
+	// go-kasa's Scramble() matches the "encrypt()[4:]" behavior (XOR bytes without length prefix).
+	encryptedCmd := kasa.Scramble(plaintextRequest)
+	b64Cmd := base64.StdEncoding.EncodeToString(encryptedCmd)
+	urlSafeCmd := url.QueryEscape(b64Cmd)
+
+	form := "content=" + urlSafeCmd
+
+	httpsURL := fmt.Sprintf("https://%s:%d%s", ip, KasaCamHTTPSPort, KasaCamHTTPSPath)
+
+	// http.Client transport with disabled TLS verification (camera uses self-signed certs).
+	tr := &http.Transport{
+		ForceAttemptHTTP2: false,
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true, //nolint:gosec
+			// Some Kasa Cam firmwares don't support newer TLS negotiation (e.g. TLS 1.3),
+			// so we explicitly limit protocol versions and ALPN.
+			MinVersion: tls.VersionTLS12,
+			MaxVersion: tls.VersionTLS12,
+			// NextProtos: []string{"http/1.1"},
+			CipherSuites: []uint16{
+				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
+			},
+		},
+	}
+	client := &http.Client{
+		Timeout:   5 * time.Second,
+		Transport: tr,
+	}
+
+	req, err := http.NewRequest(http.MethodPost, httpsURL, strings.NewReader(form))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	// Optional BasicAuth (python-kasa uses base64(username/password) style for the password).
+	// We only send this if both vars are set.
+	if user := os.Getenv("KASA_USERNAME"); user != "" {
+		pass := os.Getenv("KASA_PASSWORD")
+		if pass != "" {
+			fmt.Println("  BasicAuthhhhhhh: username=", user, "password=", pass)
+			b64Pass := base64.StdEncoding.EncodeToString([]byte(pass))
+			req.SetBasicAuth(user, b64Pass)
+		}
+	}
+
+	resp, err := client.Do(req)
+
+	fmt.Printf("sendKasaCamHTTPSCommand request: POST %s\n", httpsURL)
+	fmt.Printf("  Content-Type: application/x-www-form-urlencoded\n")
+	fmt.Printf("  Body: %s\n", form)
+
+	if resp != nil {
+		fmt.Printf("sendKasaCamHTTPSCommand response: %s\n", resp.Status)
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		raw := strings.TrimSpace(string(bodyBytes))
+		fmt.Printf("  Body (raw): %s\n", raw)
+
+		// Camera responses are XOR-encrypted bytes base64-encoded.
+		// Decode+unscramble so logs are readable.
+		if enc, err := base64.StdEncoding.DecodeString(raw); err != nil {
+			fmt.Printf("  Body (decode error): %v\n", err)
+		} else {
+			plain := kasa.Unscramble(enc)
+			fmt.Printf("  Body (decrypted): %s\n", string(plain))
+
+			// Best-effort JSON parse for clearer logging.
+			var parsed any
+			if err := json.Unmarshal(plain, &parsed); err == nil {
+				fmt.Printf("  Body (decrypted JSON): %+v\n", parsed)
+			}
+		}
+	}
+
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	// Drain body to allow connection reuse.
+	_, _ = io.Copy(io.Discard, resp.Body)
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("camera https post failed: status=%s", resp.Status)
+	}
+
+	return nil
 }
 
 func sendKasaUDPCommand(ip, cmd string) error {

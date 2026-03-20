@@ -43,6 +43,8 @@ var noteBindings = []noteBinding{
 		on, err := kasaToggleCamera(LIVING_ROOM)
 		if err == nil {
 			midiSetPadColor(midiControls.PadLivingRoomCamera, midiPadColorForState(on))
+		} else {
+			fmt.Println("  Living room camera toggle error:", err)
 		}
 	}},
 	{PadChannel, midiControls.PadOfficeCamera, "TOGGLE OFFICE CAMERA", func() {
