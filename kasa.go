@@ -357,7 +357,8 @@ const (
 	//
 	// Intended to mirror the python-kasa proto shape:
 	//   smartlife.cam.ipcamera.switch -> set_is_enable -> (system.get_sysinfo.camera_switch = x["value"])
-	cmdSetCameraEnableOn  = `{"smartlife.cam.ipcamera.switch":{"set_is_enable":{"system":{"get_sysinfo":{"camera_switch":"on"}}}}}`
+	// cmdSetCameraEnableOn  = `{"smartlife.cam.ipcamera.switch":{"set_is_enable":{"system":{"get_sysinfo":{"camera_switch":"on"}}}}}`
+	cmdSetCameraEnableOn  = `{"smartlife.cam.ipcamera.switch":{"set_is_enable":{"system":{"get_sysinfo":{ "system": {"camera_switch":"on"}}}}}}`
 	cmdSetCameraEnableOff = `{"smartlife.cam.ipcamera.switch":{"set_is_enable":{"system":{"get_sysinfo":{"camera_switch":"off"}}}}}`
 )
 
