@@ -40,14 +40,14 @@ var noteBindings = []noteBinding{
 		}
 	}},
 	{PadChannel, midiControls.PadLivingRoomCamera, "TOGGLE LIVING ROOM CAMERA", func() {
+		midiSetPadPulse(midiControls.PadLivingRoomCamera, ColorPulseLoad)
 		on, err := kasaToggleCamera(LIVING_ROOM)
 		if err == nil {
 			midiSetPadColor(midiControls.PadLivingRoomCamera, midiPadColorForState(on))
-		} else {
-			fmt.Println("  Living room camera toggle error:", err)
 		}
 	}},
 	{PadChannel, midiControls.PadOfficeCamera, "TOGGLE OFFICE CAMERA", func() {
+		midiSetPadPulse(midiControls.PadOfficeCamera, ColorPulseLoad)
 		on, err := kasaToggleCamera(OFFICE)
 		if err == nil {
 			midiSetPadColor(midiControls.PadOfficeCamera, midiPadColorForState(on))
