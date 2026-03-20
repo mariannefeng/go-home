@@ -184,7 +184,7 @@ var rainbowPalette = []uint8{5, 9, 13, 21, 33, 45, 53, 57}
 
 func runPadAnimation() {
 	const (
-		duration  = 20 * time.Minute
+		duration  = 20 * time.Second
 		frameRate = 50 * time.Millisecond
 	)
 
