@@ -498,26 +498,26 @@ func setCameraOn(ip string, on bool) error {
 		cmd   string
 	}
 
-	onStr := "off"
-	if on {
-		onStr = "on"
-	}
+	// onStr := "off"
+	// if on {
+	// 	onStr = "on"
+	// }
 
 	attempts := []attempt{
-		{
-			label: "camera_switch on/off string",
-			cmd:   fmt.Sprintf(`{"system":{"set_camera_switch":{"camera_switch":%q}}}`, onStr),
-		},
 		// {
-		// 	label: "camera_switch on/off integer",
-		// 	cmd: func() string {
-		// 		val := 0
-		// 		if on {
-		// 			val = 1
-		// 		}
-		// 		return fmt.Sprintf(`{"system":{"set_camera_switch":{"camera_switch":%d}}}`, val)
-		// 	}(),
+		// 	label: "camera_switch on/off string",
+		// 	cmd:   fmt.Sprintf(`{"system":{"set_camera_switch":{"camera_switch":%q}}}`, onStr),
 		// },
+		{
+			label: "camera_switch on/off integer",
+			cmd: func() string {
+				val := 0
+				if on {
+					val = 1
+				}
+				return fmt.Sprintf(`{"system":{"set_camera_switch":{"camera_switch":%d}}}`, val)
+			}(),
+		},
 		// {
 		// 	label: "camera_switch state field",
 		// 	cmd:   fmt.Sprintf(`{"system":{"set_camera_switch":{"state":%q}}}`, onStr),
