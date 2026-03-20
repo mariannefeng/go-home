@@ -71,6 +71,7 @@ var noteBindings = []noteBinding{
 		if err == nil {
 			midiSetPadColor(midiControls.PadTV, midiPadColorForState(on))
 		} else {
+			fmt.Println("  TV toggle error:", err)
 			midiSetPadColor(midiControls.PadTV, midiPadColorForState(tvIsOn()))
 		}
 	}},
