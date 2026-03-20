@@ -127,6 +127,7 @@ func resetPadColors() {
 	states := kasaGetBulbStates()
 	midiSetPadColorDirect(midiControls.PadFlowerLamp, midiPadColorForState(states[FlowerLamp]))
 	midiSetPadColorDirect(midiControls.PadMushroomLamp, midiPadColorForState(states[MushroomLamp]))
+	midiSetPadColorDirect(midiControls.PadRestartServer, ColorError)
 	midiSetPadColorDirect(midiControls.PadSpeaker, midiPadColorForState(bluetoothIsConnected()))
 	midiSetPadColorDirect(midiControls.PadTV, midiPadColorForState(tvIsOn()))
 
@@ -141,7 +142,8 @@ func resetPadColors() {
 	// turn off unused pads
 	assigned := map[uint8]bool{
 		midiControls.PadFlowerLamp: true, midiControls.PadMushroomLamp: true,
-		midiControls.PadSpeaker: true, midiControls.PadTV: true,
+		midiControls.PadRestartServer: true,
+		midiControls.PadSpeaker:       true, midiControls.PadTV: true,
 		midiControls.PadLivingRoomCamera: true, midiControls.PadOfficeCamera: true,
 	}
 	for pad := uint8(36); pad <= 51; pad++ {

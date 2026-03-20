@@ -44,6 +44,7 @@ var midiControls = struct {
 	PadLivingRoomCamera uint8
 	PadOfficeCamera     uint8
 	PadTV               uint8
+	PadRestartServer    uint8
 
 	KeyNextTrack uint8
 	KeyPrevTrack uint8
@@ -62,6 +63,7 @@ var midiControls = struct {
 	PadOfficeCamera:     40,
 	PadLivingRoomCamera: 41,
 	PadTV:               51,
+	PadRestartServer:    48,
 
 	KeyNextTrack: 66,
 	KeyPrevTrack: 68,

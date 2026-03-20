@@ -39,6 +39,9 @@ var noteBindings = []noteBinding{
 			midiSetPadColor(midiControls.PadMushroomLamp, midiPadColorForState(on))
 		}
 	}},
+	{PadChannel, midiControls.PadRestartServer, "RESTART SERVER", func() {
+		restartServer()
+	}},
 	{PadChannel, midiControls.PadLivingRoomCamera, "TOGGLE LIVING ROOM CAMERA", func() {
 		midiSetPadPulse(midiControls.PadLivingRoomCamera, ColorPulseLoad)
 		on, err := kasaToggleCamera(LIVING_ROOM)
