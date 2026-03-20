@@ -107,24 +107,19 @@ func handleMIDI(msg midi.Message, timestampms int32) {
 }
 
 func internetConnected() bool {
-	fmt.Println("Checking internet connection...")
-	// Fast connectivity check: can we reach the public internet over TCP?
-	// (No DNS required.)
 	d := net.Dialer{Timeout: 3 * time.Second}
 	conn, err := d.Dial("tcp", "1.1.1.1:443")
 	if err != nil {
-		fmt.Println("Internet connection failed:", err)
 		return false
 	}
 	_ = conn.Close()
-	fmt.Println("Internet connection successful")
 	return true
 }
 
 func restartServer() {
-	fmt.Println("Restarting server...")
+	fmt.Println("Restarting home controller...")
 	midiStop()
-	fmt.Println("midi stopped")
+	fmt.Println("Home controller stopped")
 	os.Exit(1)
 }
 
