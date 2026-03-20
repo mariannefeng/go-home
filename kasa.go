@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net"
 	"sync"
 	"time"
@@ -416,50 +415,35 @@ func queryCameraOn(ip string) (bool, error) {
 }
 
 func queryCameraSysinfo(ip string) (*kasa.Sysinfo, bool, error) {
-	// Many Kasa “relay-like” devices expose `relay_state` via get_sysinfo.
-	dialer := &net.Dialer{
-		Timeout:  2 * time.Second,
-		Deadline: time.Now().Add(3 * time.Second),
+	// Kasa “relay-like” devices often respond to the UDP protocol (same as discovery).
+	raddr, err := net.ResolveUDPAddr("udp4", fmt.Sprintf("%s:9999", ip))
+	if err != nil {
+		return nil, false, err
 	}
 
-	conn, err := dialer.Dial("tcp4", fmt.Sprintf("%s:9999", ip))
+	conn, err := net.DialUDP("udp4", nil, raddr)
 	if err != nil {
 		return nil, false, err
 	}
 	defer conn.Close()
 
-	if _, err = conn.Write(kasa.ScrambleTCP(kasa.CmdGetSysinfo)); err != nil {
+	if err := conn.SetDeadline(time.Now().Add(3 * time.Second)); err != nil {
 		return nil, false, err
 	}
 
-	header := make([]byte, 4)
-	if _, err = conn.Read(header); err != nil {
+	cmd := kasa.Scramble(kasa.CmdGetSysinfo)
+	if _, err := conn.Write(cmd); err != nil {
 		return nil, false, err
 	}
-	size := binary.BigEndian.Uint32(header)
 
-	data := make([]byte, size)
-	total := 0
-	for total < int(size) {
-		n, readErr := conn.Read(data[total:])
-		total += n
-		if readErr != nil {
-			// Some devices close the connection right after sending the final bytes.
-			// If we've read the full payload, treat EOF as success.
-			if readErr == io.EOF && total == int(size) {
-				break
-			}
-
-			// Print partial payload to help diagnose what we received.
-			raw := kasa.Unscramble(data[:total])
-			fmt.Printf("  camera sysinfo read ip=%s expected=%d got=%d err=%v raw=%s\n",
-				ip, size, total, readErr, string(raw))
-			return nil, false, readErr
-		}
+	buf := make([]byte, 4096)
+	n, err := conn.Read(buf)
+	if err != nil {
+		return nil, false, err
 	}
 
-	raw := kasa.Unscramble(data[:total])
-	fmt.Printf("  camera sysinfo raw ip=%s bytes=%d raw=%s\n", ip, total, string(raw))
+	raw := kasa.Unscramble(buf[:n])
+	fmt.Printf("  camera sysinfo raw ip=%s bytes=%d raw=%s\n", ip, n, string(raw))
 
 	var kd kasa.KasaDevice
 	if err := json.Unmarshal(raw, &kd); err != nil {
@@ -483,5 +467,25 @@ func setCameraOn(ip string, on bool) error {
 		state = 1
 	}
 	cmd := fmt.Sprintf(kasa.CmdSetRelayState, state)
-	return sendKasaCommand(ip, cmd)
+	return sendKasaUDPCommand(ip, cmd)
+}
+
+func sendKasaUDPCommand(ip, cmd string) error {
+	raddr, err := net.ResolveUDPAddr("udp4", fmt.Sprintf("%s:9999", ip))
+	if err != nil {
+		return err
+	}
+
+	conn, err := net.DialUDP("udp4", nil, raddr)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	if err := conn.SetDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		return err
+	}
+
+	_, err = conn.Write(kasa.Scramble(cmd))
+	return err
 }
