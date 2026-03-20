@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -18,6 +16,11 @@ const (
 	MushroomLampIP = "192.168.1.160"
 	FlowerLamp     = "Flower lamp"
 	FlowerLampIP   = "192.168.1.153"
+
+	LIVING_ROOM   = "nommy cam"
+	LIVING_ROOMIP = "192.168.1.151"
+	OFFICE        = "awwfice"
+	OFFICEIP      = "192.168.1.156"
 )
 
 var knownBulbs = []struct {
@@ -58,6 +61,11 @@ type bulbState struct {
 }
 
 func kasaInit() {
+	kasaInitBulbs()
+	kasaInitCameras()
+}
+
+func kasaInitBulbs() {
 	fmt.Println("Connecting to Kasa bulbs...")
 	bulbs = make(map[string]bulbState)
 
@@ -83,8 +91,6 @@ func kasaInit() {
 		}
 	}
 	fmt.Println()
-
-	kasaInitCameras()
 }
 
 func kasaGetBulbStates() map[string]bool {
@@ -148,103 +154,50 @@ func kasaToggleLamp(alias string) (on bool, err error) {
 }
 
 func kasaInitCameras() {
-	fmt.Println("Discovering Kasa cameras...")
+	fmt.Println("Connecting to Kasa cameras...")
 
-	// BroadcastDiscovery blocks until its internal listener timeout fires.
-	// Keep this small since we only need 2 devices.
-	devices, err := kasa.BroadcastDiscovery(2, 2)
-	if err != nil {
-		fmt.Printf("  camera discovery error: %s\n\n", err)
-		return
-	}
-
-	type discovered struct {
-		ip string
-		si *kasa.Sysinfo
-	}
-	all := make([]discovered, 0, len(devices))
-	for ip, si := range devices {
-		all = append(all, discovered{ip: ip, si: si})
-	}
-	sort.Slice(all, func(i, j int) bool { return all[i].ip < all[j].ip })
-
-	fmt.Printf("  discovered %d device(s):\n", len(all))
-	for _, d := range all {
-		on := d.si.RelayState == 1
-		fmt.Printf("    - %s (%s) model=%s ip=%s relay_state=%d (on=%t)\n",
-			d.si.Alias, d.si.DevName, d.si.Model, d.ip, d.si.RelayState, on)
-	}
-
-	looksLikeCamera := func(si *kasa.Sysinfo) bool {
-		// Camera models are typically KCxxx (TP-Link Kasa cameras).
-		model := strings.ToUpper(si.Model)
-		alias := strings.ToUpper(si.Alias)
-		devName := strings.ToUpper(si.DevName)
-		feature := strings.ToUpper(si.Feature)
-
-		return strings.Contains(model, "KC") ||
-			strings.Contains(alias, "CAM") ||
-			strings.Contains(devName, "CAM") ||
-			strings.Contains(feature, "CAM")
-	}
-
-	candidates := make([]cameraInfo, 0, 2)
-	for _, d := range all {
-		if looksLikeCamera(d.si) {
-			candidates = append(candidates, cameraInfo{
-				alias:   d.si.Alias,
-				devName: d.si.DevName,
-				model:   d.si.Model,
-				ip:      d.ip,
-			})
-		}
-	}
-
-	// If we can't confidently identify two cameras, fall back to first two discovered
-	// devices so we can still wire/ping the expected “on/off” behavior.
-	if len(candidates) < 2 && len(all) >= 2 {
-		fmt.Println("  couldn't identify 2 cameras via model/name; falling back to first two discovered devices")
-		candidates = candidates[:0]
-		for i := 0; i < 2 && i < len(all); i++ {
-			candidates = append(candidates, cameraInfo{
-				alias:   all[i].si.Alias,
-				devName: all[i].si.DevName,
-				model:   all[i].si.Model,
-				ip:      all[i].ip,
-			})
-		}
-	}
-
-	if len(candidates) == 0 {
-		fmt.Println()
-		fmt.Println("  no camera candidates found (camera pads will be inactive)")
-		return
-	}
-	if len(candidates) < 2 {
-		fmt.Printf("  found %d camera candidate(s); camera pad for missing device will be inactive\n", len(candidates))
+	knownCameras := []struct {
+		fallbackAlias string
+		ip            string
+	}{
+		{fallbackAlias: LIVING_ROOM, ip: LIVING_ROOMIP},
+		{fallbackAlias: OFFICE, ip: OFFICEIP},
 	}
 
 	camerasMu.Lock()
-	cameras = make([]cameraState, len(candidates))
+	cameras = make([]cameraState, len(knownCameras))
 	camerasMu.Unlock()
 
-	for i := range candidates {
-		on, err := queryCameraOn(candidates[i].ip)
+	for i, c := range knownCameras {
+		ip := c.ip
+		si, on, err := queryCameraSysinfo(ip)
+		alias := ""
+		devName := ""
+		model := ""
+		if si != nil {
+			alias = si.Alias
+			devName = si.DevName
+			model = si.Model
+		}
+		if alias == "" {
+			alias = c.fallbackAlias
+		}
+
 		if err != nil {
-			fmt.Printf("  camera[%d] (%s) ip=%s query error: %s; using relay_state from discovery\n", i+1, candidates[i].alias, candidates[i].ip, err)
-			// Best-effort: use relay_state from discovery if available.
-			// (If missing, default to false.)
+			fmt.Printf("  camera[%d] alias=%q ip=%s query error: %s (on=false)\n", i+1, alias, ip, err)
 			on = false
-			for _, d := range all {
-				if d.ip == candidates[i].ip {
-					on = d.si.RelayState == 1
-					break
-				}
-			}
 		}
 
 		camerasMu.Lock()
-		cameras[i] = cameraState{info: candidates[i], on: on}
+		cameras[i] = cameraState{
+			info: cameraInfo{
+				alias:   alias,
+				devName: devName,
+				model:   model,
+				ip:      ip,
+			},
+			on: on,
+		}
 		camerasMu.Unlock()
 	}
 
@@ -456,6 +409,12 @@ func sendKasaCommand(ip, cmd string) error {
 }
 
 func queryCameraOn(ip string) (bool, error) {
+	si, on, err := queryCameraSysinfo(ip)
+	_ = si
+	return on, err
+}
+
+func queryCameraSysinfo(ip string) (*kasa.Sysinfo, bool, error) {
 	// Many Kasa “relay-like” devices expose `relay_state` via get_sysinfo.
 	dialer := &net.Dialer{
 		Timeout:  2 * time.Second,
@@ -464,17 +423,17 @@ func queryCameraOn(ip string) (bool, error) {
 
 	conn, err := dialer.Dial("tcp4", fmt.Sprintf("%s:9999", ip))
 	if err != nil {
-		return false, err
+		return nil, false, err
 	}
 	defer conn.Close()
 
 	if _, err = conn.Write(kasa.ScrambleTCP(kasa.CmdGetSysinfo)); err != nil {
-		return false, err
+		return nil, false, err
 	}
 
 	header := make([]byte, 4)
 	if _, err = conn.Read(header); err != nil {
-		return false, err
+		return nil, false, err
 	}
 	size := binary.BigEndian.Uint32(header)
 
@@ -483,7 +442,7 @@ func queryCameraOn(ip string) (bool, error) {
 	for total < int(size) {
 		n, err := conn.Read(data[total:])
 		if err != nil {
-			return false, err
+			return nil, false, err
 		}
 		total += n
 	}
@@ -491,9 +450,10 @@ func queryCameraOn(ip string) (bool, error) {
 	raw := kasa.Unscramble(data)
 	var kd kasa.KasaDevice
 	if err := json.Unmarshal(raw, &kd); err != nil {
-		return false, fmt.Errorf("unmarshal camera sysinfo: %w (raw: %s)", err, string(raw))
+		return nil, false, fmt.Errorf("unmarshal camera sysinfo: %w (raw: %s)", err, string(raw))
 	}
-	return kd.GetSysinfo.Sysinfo.RelayState == 1, nil
+
+	return &kd.GetSysinfo.Sysinfo, kd.GetSysinfo.Sysinfo.RelayState == 1, nil
 }
 
 func setCameraOn(ip string, on bool) error {
