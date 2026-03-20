@@ -18,9 +18,9 @@ const (
 	FlowerLampIP   = "192.168.1.153"
 
 	LIVING_ROOM   = "nommy cam"
-	LIVING_ROOMIP = "192.168.1.151"
+	LIVING_ROOMIP = "192.168.1.156"
 	OFFICE        = "awwfice"
-	OFFICEIP      = "192.168.1.156"
+	OFFICEIP      = "192.168.1.151"
 )
 
 var knownBulbs = []struct {
@@ -414,6 +414,22 @@ func queryCameraOn(ip string) (bool, error) {
 	return on, err
 }
 
+type cameraSysinfoResponse struct {
+	System struct {
+		GetSysinfo struct {
+			System cameraSysinfo `json:"system"`
+		} `json:"get_sysinfo"`
+	} `json:"system"`
+}
+
+type cameraSysinfo struct {
+	Alias        string `json:"alias"`
+	DevName      string `json:"dev_name"`
+	Model        string `json:"model"`
+	CameraSwitch string `json:"camera_switch"`
+	LedStatus    string `json:"led_status"`
+}
+
 func queryCameraSysinfo(ip string) (*kasa.Sysinfo, bool, error) {
 	// Kasa “relay-like” devices often respond to the UDP protocol (same as discovery).
 	raddr, err := net.ResolveUDPAddr("udp4", fmt.Sprintf("%s:9999", ip))
@@ -445,29 +461,92 @@ func queryCameraSysinfo(ip string) (*kasa.Sysinfo, bool, error) {
 	raw := kasa.Unscramble(buf[:n])
 	fmt.Printf("  camera sysinfo raw ip=%s bytes=%d raw=%s\n", ip, n, string(raw))
 
-	var kd kasa.KasaDevice
-	if err := json.Unmarshal(raw, &kd); err != nil {
+	var resp cameraSysinfoResponse
+	if err := json.Unmarshal(raw, &resp); err != nil {
 		return nil, false, fmt.Errorf("unmarshal camera sysinfo: %w (raw: %s)", err, string(raw))
 	}
 
-	fmt.Printf("  camera sysinfo parsed ip=%s relay_state=%d alias=%q dev_name=%q model=%q\n",
+	sys := resp.System.GetSysinfo.System
+
+	// The EC70 uses `camera_switch` ("on"/"off") to represent power.
+	on := sys.CameraSwitch == "on"
+
+	fmt.Printf("  camera sysinfo parsed ip=%s camera_switch=%q alias=%q dev_name=%q model=%q led_status=%q\n",
 		ip,
-		kd.GetSysinfo.Sysinfo.RelayState,
-		kd.GetSysinfo.Sysinfo.Alias,
-		kd.GetSysinfo.Sysinfo.DevName,
-		kd.GetSysinfo.Sysinfo.Model,
+		sys.CameraSwitch,
+		sys.Alias,
+		sys.DevName,
+		sys.Model,
+		sys.LedStatus,
 	)
 
-	return &kd.GetSysinfo.Sysinfo, kd.GetSysinfo.Sysinfo.RelayState == 1, nil
+	// We return a kasa.Sysinfo for compatibility with callers.
+	// Not all fields will be populated for these cameras.
+	return &kasa.Sysinfo{
+		Alias:   sys.Alias,
+		DevName: sys.DevName,
+		Model:   sys.Model,
+	}, on, nil
 }
 
 func setCameraOn(ip string, on bool) error {
-	state := 0
-	if on {
-		state = 1
+	// EC70 cameras use `camera_switch` in sysinfo ("on"/"off").
+	// There isn't a dedicated helper in go-kasa for this device class,
+	// so we try a few plausible payload shapes and verify by re-querying.
+	type attempt struct {
+		label string
+		cmd   string
 	}
-	cmd := fmt.Sprintf(kasa.CmdSetRelayState, state)
-	return sendKasaUDPCommand(ip, cmd)
+
+	onStr := "off"
+	if on {
+		onStr = "on"
+	}
+
+	attempts := []attempt{
+		{
+			label: "camera_switch on/off string",
+			cmd:   fmt.Sprintf(`{"system":{"set_camera_switch":{"camera_switch":%q}}}`, onStr),
+		},
+		// {
+		// 	label: "camera_switch on/off integer",
+		// 	cmd: func() string {
+		// 		val := 0
+		// 		if on {
+		// 			val = 1
+		// 		}
+		// 		return fmt.Sprintf(`{"system":{"set_camera_switch":{"camera_switch":%d}}}`, val)
+		// 	}(),
+		// },
+		// {
+		// 	label: "camera_switch state field",
+		// 	cmd:   fmt.Sprintf(`{"system":{"set_camera_switch":{"state":%q}}}`, onStr),
+		// },
+	}
+
+	var lastErr error
+	for _, a := range attempts {
+		if err := sendKasaUDPCommand(ip, a.cmd); err != nil {
+			lastErr = err
+			continue
+		}
+
+		time.Sleep(300 * time.Millisecond)
+		currentOn, qerr := queryCameraOn(ip)
+		if qerr == nil && currentOn == on {
+			return nil
+		}
+		if qerr != nil {
+			lastErr = qerr
+		} else {
+			lastErr = fmt.Errorf("verification mismatch after %s (got on=%t desired on=%t)", a.label, currentOn, on)
+		}
+	}
+
+	if lastErr == nil {
+		lastErr = fmt.Errorf("no attempts succeeded")
+	}
+	return lastErr
 }
 
 func sendKasaUDPCommand(ip, cmd string) error {
