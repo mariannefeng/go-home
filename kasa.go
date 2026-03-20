@@ -352,6 +352,13 @@ const (
 	cmdGetLightState = `{"smartlife.iot.smartbulb.lightingservice":{"get_light_state":{}}}`
 	cmdSetLightOn    = `{"smartlife.iot.smartbulb.lightingservice":{"transition_light_state":{"on_off":1}}}`
 	cmdSetLightOff   = `{"smartlife.iot.smartbulb.lightingservice":{"transition_light_state":{"on_off":0}}}`
+
+	// Camera "switch" enable/disable payload.
+	//
+	// Intended to mirror the python-kasa proto shape:
+	//   smartlife.cam.ipcamera.switch -> set_is_enable -> (system.get_sysinfo.camera_switch = x["value"])
+	cmdSetCameraEnableOn  = `{"smartlife.cam.ipcamera.switch":{"set_is_enable":{"system":{"get_sysinfo":{"camera_switch":"on"}}}}}`
+	cmdSetCameraEnableOff = `{"smartlife.cam.ipcamera.switch":{"set_is_enable":{"system":{"get_sysinfo":{"camera_switch":"off"}}}}}`
 )
 
 func queryLightState(ip string) (*lightState, error) {
@@ -509,65 +516,28 @@ func queryCameraSysinfo(ip string) (*kasa.Sysinfo, bool, error) {
 }
 
 func setCameraOn(ip string, on bool) error {
-	// EC70 cameras use `camera_switch` in sysinfo ("on"/"off").
-	// There isn't a dedicated helper in go-kasa for this device class,
-	// so we try a few plausible payload shapes and verify by re-querying.
-	type attempt struct {
-		label string
-		cmd   string
-	}
-
-	onStr := "off"
+	// Mirror the python-kasa shape you specified:
+	//   smartlife.cam.ipcamera.switch -> set_is_enable -> system.get_sysinfo.camera_switch = x["value"]
+	cmd := cmdSetCameraEnableOff
 	if on {
-		onStr = "on"
+		cmd = cmdSetCameraEnableOn
 	}
 
-	attempts := []attempt{
-		{
-			label: "camera_switch on/off string",
-			cmd:   fmt.Sprintf(`{"system":{"set_camera_switch":{"camera_switch":%q}}}`, onStr),
-		},
-		{
-			label: "camera_switch on/off integer",
-			cmd: func() string {
-				val := 0
-				if on {
-					val = 1
-				}
-				return fmt.Sprintf(`{"system":{"set_camera_switch":{"camera_switch":%d}}}`, val)
-			}(),
-		},
-		{
-			label: "camera_switch state field",
-			cmd:   fmt.Sprintf(`{"system":{"set_camera_switch":{"state":%q}}}`, onStr),
-		},
+	fmt.Printf("  trying camera cmd to ip=%s cmd=%s\n", ip, cmd)
+	if err := sendKasaUDPCommand(ip, cmd); err != nil {
+		return err
 	}
 
-	var lastErr error
-	for _, a := range attempts {
-		fmt.Printf("  trying camera cmd to ip=%s: %s cmd=%s\n", ip, a.label, a.cmd)
-		if err := sendKasaUDPCommand(ip, a.cmd); err != nil {
-			lastErr = err
-			continue
-		}
-
-		time.Sleep(300 * time.Millisecond)
-		currentOn, qerr := queryCameraOn(ip)
-		if qerr == nil && currentOn == on {
-			fmt.Printf("  camera cmd succeeded ip=%s label=%s => camera_switch=%t\n", ip, a.label, currentOn)
-			return nil
-		}
-		if qerr != nil {
-			lastErr = qerr
-		} else {
-			lastErr = fmt.Errorf("verification mismatch after %s (got on=%t desired on=%t)", a.label, currentOn, on)
-		}
+	time.Sleep(300 * time.Millisecond)
+	currentOn, qerr := queryCameraOn(ip)
+	if qerr == nil && currentOn == on {
+		fmt.Printf("  camera cmd succeeded ip=%s => camera_switch=%t\n", ip, currentOn)
+		return nil
 	}
-
-	if lastErr == nil {
-		lastErr = fmt.Errorf("no attempts succeeded")
+	if qerr != nil {
+		return qerr
 	}
-	return lastErr
+	return fmt.Errorf("verification mismatch after camera cmd (got on=%t desired on=%t)", currentOn, on)
 }
 
 func sendKasaUDPCommand(ip, cmd string) error {
