@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -32,6 +33,11 @@ func main() {
 }
 
 func handleMIDI(msg midi.Message, timestampms int32) {
+	// During "red mode" (no internet), any pad press should restart the service.
+	if RedMode.Load() {
+		go restartServer()
+		return
+	}
 	// ignore input while keys are locked out (e.g. when pinging phone)
 	if PadLocked.Load() {
 		return
@@ -100,6 +106,28 @@ func handleMIDI(msg midi.Message, timestampms int32) {
 	}
 }
 
+func internetConnected() bool {
+	fmt.Println("Checking internet connection...")
+	// Fast connectivity check: can we reach the public internet over TCP?
+	// (No DNS required.)
+	d := net.Dialer{Timeout: 3 * time.Second}
+	conn, err := d.Dial("tcp", "1.1.1.1:443")
+	if err != nil {
+		fmt.Println("Internet connection failed:", err)
+		return false
+	}
+	_ = conn.Close()
+	fmt.Println("Internet connection successful")
+	return true
+}
+
+func restartServer() {
+	fmt.Println("Restarting server...")
+	midiStop()
+	fmt.Println("midi stopped")
+	os.Exit(1)
+}
+
 func resetPadColors() {
 	states := kasaGetBulbStates()
 	midiSetPadColorDirect(midiControls.PadFlowerLamp, midiPadColorForState(states[FlowerLamp]))
@@ -161,5 +189,21 @@ func startPollers(stop <-chan struct{}) {
 	})
 	go pollEvery(30*time.Second, stop, func() {
 		midiSetPadColor(midiControls.PadTV, midiPadColorForState(tvIsOn()))
+	})
+	go pollEvery(60*time.Second, stop, func() {
+		if !internetConnected() {
+			// No internet: turn the entire keyboard "red" and lock out normal pad updates.
+			RedMode.Store(true)
+			PadLocked.Store(true)
+			for pad := uint8(36); pad <= 51; pad++ {
+				midiSetPadColorDirect(pad, ColorError)
+			}
+			return
+		}
+
+		// Internet is back: restore normal UI behavior.
+		RedMode.Store(false)
+		PadLocked.Store(false)
+		resetPadColors()
 	})
 }

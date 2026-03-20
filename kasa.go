@@ -59,7 +59,7 @@ type cameraState struct {
 }
 
 var (
-	cameras   []cameraState
+	cameras   map[string]cameraState
 	camerasMu sync.Mutex
 )
 
@@ -165,41 +165,27 @@ func kasaToggleLamp(alias string) (on bool, err error) {
 
 func kasaInitCameras() {
 	fmt.Println("Connecting to Kasa cameras...")
-
-	knownCameras := []struct {
-		fallbackAlias string
-		ip            string
-	}{
-		{fallbackAlias: LIVING_ROOM, ip: LIVING_ROOMIP},
-		{fallbackAlias: OFFICE, ip: OFFICEIP},
+	knownCameras := map[string]string{
+		LIVING_ROOM: LIVING_ROOMIP,
+		OFFICE:      OFFICEIP,
 	}
-
 	camerasMu.Lock()
-	cameras = make([]cameraState, len(knownCameras))
+	cameras = make(map[string]cameraState, len(knownCameras))
 	camerasMu.Unlock()
-
-	for i, c := range knownCameras {
-		ip := c.ip
+	for alias, ip := range knownCameras {
 		si, on, err := queryCameraSysinfo(ip)
-		alias := ""
 		devName := ""
 		model := ""
 		if si != nil {
-			alias = si.Alias
 			devName = si.DevName
 			model = si.Model
 		}
-		if alias == "" {
-			alias = c.fallbackAlias
-		}
-
 		if err != nil {
-			fmt.Printf("  camera[%d] alias=%q ip=%s query error: %s (on=false)\n", i+1, alias, ip, err)
+			fmt.Printf("  camera alias=%q ip=%s query error: %s (on=false)\n", alias, ip, err)
 			on = false
 		}
-
 		camerasMu.Lock()
-		cameras[i] = cameraState{
+		cameras[alias] = cameraState{
 			info: cameraInfo{
 				alias:   alias,
 				devName: devName,
@@ -210,11 +196,12 @@ func kasaInitCameras() {
 		}
 		camerasMu.Unlock()
 	}
-
-	for i := range cameras {
+	camerasMu.Lock()
+	for alias, st := range cameras {
 		fmt.Printf("alias=%q ip=%s model=%s on=%t\n",
-			cameras[i].info.alias, cameras[i].info.ip, cameras[i].info.model, cameras[i].on)
+			alias, st.info.ip, st.info.model, st.on)
 	}
+	camerasMu.Unlock()
 	fmt.Println()
 }
 
@@ -223,29 +210,30 @@ func kasaGetCameraStates() map[string]bool {
 	defer camerasMu.Unlock()
 
 	out := make(map[string]bool, len(cameras))
-	for i := range cameras {
-		out[cameras[i].info.alias] = cameras[i].on
+	for alias, st := range cameras {
+		out[alias] = st.on
 	}
 	return out
 }
 
 func kasaRefreshCameras() map[string]bool {
 	camerasMu.Lock()
-	n := len(cameras)
-	ips := make([]string, 0, n)
-	for i := 0; i < n; i++ {
-		ips = append(ips, cameras[i].info.ip)
+	ips := make(map[string]string, len(cameras))
+	for alias, st := range cameras {
+		ips[alias] = st.info.ip
 	}
 	camerasMu.Unlock()
 
-	for i := 0; i < n; i++ {
-		on, err := queryCameraOn(ips[i])
+	for alias, ip := range ips {
+		on, err := queryCameraOn(ip)
 		if err != nil {
 			continue
 		}
 
 		camerasMu.Lock()
-		cameras[i].on = on
+		st := cameras[alias]
+		st.on = on
+		cameras[alias] = st
 		camerasMu.Unlock()
 	}
 
@@ -254,28 +242,18 @@ func kasaRefreshCameras() map[string]bool {
 
 func kasaToggleCamera(alias string) (on bool, err error) {
 	camerasMu.Lock()
-	idx := -1
-	for i := range cameras {
-		// Prefer matching by Kasa app alias (what we print in init).
-		if cameras[i].info.alias == alias {
-			idx = i
-			break
-		}
-	}
-	if idx < 0 || idx >= len(cameras) {
-		camerasMu.Unlock()
+	current, ok := cameras[alias]
+	camerasMu.Unlock()
+	if !ok {
 		return false, fmt.Errorf("camera alias %q not found (known: %v)", alias, cameraAliases())
 	}
-
-	current := cameras[idx]
-	camerasMu.Unlock()
 
 	target := !current.on
 	if err := setCameraOn(current.info.ip, target); err != nil {
 		return current.on, err
 	}
 
-	// Verify by querying state, since some devices may accept the TCP write
+	// Verify by querying state, since some devices may accept the write
 	// but not actually change state.
 	time.Sleep(200 * time.Millisecond)
 	verifiedOn, qerr := queryCameraOn(current.info.ip)
@@ -284,11 +262,8 @@ func kasaToggleCamera(alias string) (on bool, err error) {
 	}
 
 	camerasMu.Lock()
-	// idx might still be valid; if cameras were re-discovered concurrently (rare),
-	// we keep the last-known state.
-	if idx >= 0 && idx < len(cameras) {
-		cameras[idx].on = verifiedOn
-	}
+	current.on = verifiedOn
+	cameras[alias] = current
 	camerasMu.Unlock()
 
 	state := "OFF"
@@ -304,8 +279,8 @@ func cameraAliases() []string {
 	defer camerasMu.Unlock()
 
 	out := make([]string, 0, len(cameras))
-	for i := range cameras {
-		out = append(out, cameras[i].info.alias)
+	for alias := range cameras {
+		out = append(out, alias)
 	}
 	return out
 }
@@ -499,18 +474,7 @@ func queryCameraSysinfo(ip string) (*kasa.Sysinfo, bool, error) {
 	}
 
 	sys := resp.System.GetSysinfo.System
-
-	// The EC70 uses `camera_switch` ("on"/"off") to represent power.
 	on := sys.CameraSwitch == "on"
-
-	fmt.Printf("  camera sysinfo parsed ip=%s camera_switch=%q alias=%q dev_name=%q model=%q led_status=%q\n",
-		ip,
-		sys.CameraSwitch,
-		sys.Alias,
-		sys.DevName,
-		sys.Model,
-		sys.LedStatus,
-	)
 
 	// We return a kasa.Sysinfo for compatibility with callers.
 	// Not all fields will be populated for these cameras.
@@ -553,14 +517,8 @@ func sendKasaCamHTTPSCommand(ip, plaintextRequest string) error {
 	httpsURL := fmt.Sprintf("https://%s:%d%s", ip, KasaCamHTTPSPort, KasaCamHTTPSPath)
 
 	tr := &http.Transport{
-		// ForceAttemptHTTP2: false,
 		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true, //nolint:gosec
-			// Some Kasa Cam firmwares don't support newer TLS negotiation (e.g. TLS 1.3),
-			// so we explicitly limit protocol versions and ALPN.
-			// MinVersion: tls.VersionTLS12,
-			// MaxVersion: tls.VersionTLS12,
-			// NextProtos: []string{"http/1.1"},
+			InsecureSkipVerify: true,
 			CipherSuites: []uint16{
 				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
 				tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
@@ -587,33 +545,6 @@ func sendKasaCamHTTPSCommand(ip, plaintextRequest string) error {
 	}
 
 	resp, err := client.Do(req)
-
-	fmt.Printf("sendKasaCamHTTPSCommand request: POST %s\n", httpsURL)
-	fmt.Printf("  Content-Type: application/x-www-form-urlencoded\n")
-	fmt.Printf("  Body: %s\n", form)
-
-	if resp != nil {
-		fmt.Printf("sendKasaCamHTTPSCommand response: %s\n", resp.Status)
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		raw := strings.TrimSpace(string(bodyBytes))
-		fmt.Printf("  Body (raw): %s\n", raw)
-
-		// Camera responses are XOR-encrypted bytes base64-encoded.
-		// Decode+unscramble so logs are readable.
-		if enc, err := base64.StdEncoding.DecodeString(raw); err != nil {
-			fmt.Printf("  Body (decode error): %v\n", err)
-		} else {
-			plain := kasa.Unscramble(enc)
-			fmt.Printf("  Body (decrypted): %s\n", string(plain))
-
-			// Best-effort JSON parse for clearer logging.
-			var parsed any
-			if err := json.Unmarshal(plain, &parsed); err == nil {
-				fmt.Printf("  Body (decrypted JSON): %+v\n", parsed)
-			}
-		}
-	}
-
 	if err != nil {
 		return err
 	}

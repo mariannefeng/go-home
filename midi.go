@@ -10,6 +10,7 @@ import (
 )
 
 var PadLocked atomic.Bool
+var RedMode atomic.Bool
 
 const (
 	PadChannel       = 9
@@ -26,6 +27,7 @@ const (
 	ColorOff   = 0
 	ColorOn    = 21
 	ColorNotOn = 53
+	ColorError = 5
 
 	ColorPulseLoad = 45
 )
