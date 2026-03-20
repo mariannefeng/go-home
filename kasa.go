@@ -208,18 +208,18 @@ func kasaInitCameras() {
 	fmt.Println()
 }
 
-func kasaGetCameraStates() []bool {
+func kasaGetCameraStates() map[string]bool {
 	camerasMu.Lock()
 	defer camerasMu.Unlock()
 
-	out := make([]bool, len(cameras))
+	out := make(map[string]bool, len(cameras))
 	for i := range cameras {
-		out[i] = cameras[i].on
+		out[cameras[i].info.alias] = cameras[i].on
 	}
 	return out
 }
 
-func kasaRefreshCameras() []bool {
+func kasaRefreshCameras() map[string]bool {
 	camerasMu.Lock()
 	n := len(cameras)
 	ips := make([]string, 0, n)
@@ -242,12 +242,21 @@ func kasaRefreshCameras() []bool {
 	return kasaGetCameraStates()
 }
 
-func kasaToggleCamera(idx int) (on bool, err error) {
+func kasaToggleCamera(alias string) (on bool, err error) {
 	camerasMu.Lock()
+	idx := -1
+	for i := range cameras {
+		// Prefer matching by Kasa app alias (what we print in init).
+		if cameras[i].info.alias == alias {
+			idx = i
+			break
+		}
+	}
 	if idx < 0 || idx >= len(cameras) {
 		camerasMu.Unlock()
-		return false, fmt.Errorf("camera idx %d out of range", idx)
+		return false, fmt.Errorf("camera alias %q not found (known: %v)", alias, cameraAliases())
 	}
+
 	current := cameras[idx]
 	camerasMu.Unlock()
 
@@ -276,8 +285,19 @@ func kasaToggleCamera(idx int) (on bool, err error) {
 	if verifiedOn {
 		state = "ON"
 	}
-	fmt.Printf("  CAMERA[%d] %s (%s) → %s\n", idx+1, current.info.alias, current.info.ip, state)
+	fmt.Printf("  CAMERA %s (%s) → %s\n", current.info.alias, current.info.ip, state)
 	return verifiedOn, nil
+}
+
+func cameraAliases() []string {
+	camerasMu.Lock()
+	defer camerasMu.Unlock()
+
+	out := make([]string, 0, len(cameras))
+	for i := range cameras {
+		out = append(out, cameras[i].info.alias)
+	}
+	return out
 }
 
 var lastBrightnessSend sync.Map
@@ -459,7 +479,6 @@ func queryCameraSysinfo(ip string) (*kasa.Sysinfo, bool, error) {
 	}
 
 	raw := kasa.Unscramble(buf[:n])
-	fmt.Printf("  camera sysinfo raw ip=%s bytes=%d raw=%s\n", ip, n, string(raw))
 
 	var resp cameraSysinfoResponse
 	if err := json.Unmarshal(raw, &resp); err != nil {
@@ -498,16 +517,16 @@ func setCameraOn(ip string, on bool) error {
 		cmd   string
 	}
 
-	// onStr := "off"
-	// if on {
-	// 	onStr = "on"
-	// }
+	onStr := "off"
+	if on {
+		onStr = "on"
+	}
 
 	attempts := []attempt{
-		// {
-		// 	label: "camera_switch on/off string",
-		// 	cmd:   fmt.Sprintf(`{"system":{"set_camera_switch":{"camera_switch":%q}}}`, onStr),
-		// },
+		{
+			label: "camera_switch on/off string",
+			cmd:   fmt.Sprintf(`{"system":{"set_camera_switch":{"camera_switch":%q}}}`, onStr),
+		},
 		{
 			label: "camera_switch on/off integer",
 			cmd: func() string {
@@ -518,14 +537,15 @@ func setCameraOn(ip string, on bool) error {
 				return fmt.Sprintf(`{"system":{"set_camera_switch":{"camera_switch":%d}}}`, val)
 			}(),
 		},
-		// {
-		// 	label: "camera_switch state field",
-		// 	cmd:   fmt.Sprintf(`{"system":{"set_camera_switch":{"state":%q}}}`, onStr),
-		// },
+		{
+			label: "camera_switch state field",
+			cmd:   fmt.Sprintf(`{"system":{"set_camera_switch":{"state":%q}}}`, onStr),
+		},
 	}
 
 	var lastErr error
 	for _, a := range attempts {
+		fmt.Printf("  trying camera cmd to ip=%s: %s cmd=%s\n", ip, a.label, a.cmd)
 		if err := sendKasaUDPCommand(ip, a.cmd); err != nil {
 			lastErr = err
 			continue
@@ -534,6 +554,7 @@ func setCameraOn(ip string, on bool) error {
 		time.Sleep(300 * time.Millisecond)
 		currentOn, qerr := queryCameraOn(ip)
 		if qerr == nil && currentOn == on {
+			fmt.Printf("  camera cmd succeeded ip=%s label=%s => camera_switch=%t\n", ip, a.label, currentOn)
 			return nil
 		}
 		if qerr != nil {

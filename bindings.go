@@ -39,16 +39,16 @@ var noteBindings = []noteBinding{
 			midiSetPadColor(midiControls.PadMushroomLamp, midiPadColorForState(on))
 		}
 	}},
-	{PadChannel, midiControls.PadCamera1, "TOGGLE CAMERA 1", func() {
-		on, err := kasaToggleCamera(0)
+	{PadChannel, midiControls.PadLivingRoomCamera, "TOGGLE LIVING ROOM CAMERA", func() {
+		on, err := kasaToggleCamera(LIVING_ROOM)
 		if err == nil {
-			midiSetPadColor(midiControls.PadCamera1, midiPadColorForState(on))
+			midiSetPadColor(midiControls.PadLivingRoomCamera, midiPadColorForState(on))
 		}
 	}},
-	{PadChannel, midiControls.PadCamera2, "TOGGLE CAMERA 2", func() {
-		on, err := kasaToggleCamera(1)
+	{PadChannel, midiControls.PadOfficeCamera, "TOGGLE OFFICE CAMERA", func() {
+		on, err := kasaToggleCamera(OFFICE)
 		if err == nil {
-			midiSetPadColor(midiControls.PadCamera2, midiPadColorForState(on))
+			midiSetPadColor(midiControls.PadOfficeCamera, midiPadColorForState(on))
 		}
 	}},
 	{PadChannel, midiControls.PadSpeaker, "TOGGLE SPEAKER", func() {

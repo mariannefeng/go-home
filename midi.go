@@ -36,12 +36,12 @@ var (
 )
 
 var midiControls = struct {
-	PadSpeaker      uint8
-	PadMushroomLamp uint8
-	PadFlowerLamp   uint8
-	PadCamera1      uint8
-	PadCamera2      uint8
-	PadTV           uint8
+	PadSpeaker          uint8
+	PadMushroomLamp     uint8
+	PadFlowerLamp       uint8
+	PadLivingRoomCamera uint8
+	PadOfficeCamera     uint8
+	PadTV               uint8
 
 	KeyNextTrack uint8
 	KeyPrevTrack uint8
@@ -54,12 +54,12 @@ var midiControls = struct {
 	Play                   uint8
 	Stop                   uint8
 }{
-	PadSpeaker:      47,
-	PadMushroomLamp: 37,
-	PadFlowerLamp:   36,
-	PadCamera1:      40,
-	PadCamera2:      41,
-	PadTV:           51,
+	PadSpeaker:          47,
+	PadMushroomLamp:     37,
+	PadFlowerLamp:       36,
+	PadOfficeCamera:     40,
+	PadLivingRoomCamera: 41,
+	PadTV:               51,
 
 	KeyNextTrack: 66,
 	KeyPrevTrack: 68,

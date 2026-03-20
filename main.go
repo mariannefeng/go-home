@@ -108,18 +108,18 @@ func resetPadColors() {
 	midiSetPadColorDirect(midiControls.PadTV, midiPadColorForState(tvIsOn()))
 
 	cameraStates := kasaGetCameraStates()
-	if len(cameraStates) > 0 {
-		midiSetPadColorDirect(midiControls.PadCamera1, midiPadColorForState(cameraStates[0]))
+	if on, ok := cameraStates[LIVING_ROOM]; ok {
+		midiSetPadColorDirect(midiControls.PadLivingRoomCamera, midiPadColorForState(on))
 	}
-	if len(cameraStates) > 1 {
-		midiSetPadColorDirect(midiControls.PadCamera2, midiPadColorForState(cameraStates[1]))
+	if on, ok := cameraStates[OFFICE]; ok {
+		midiSetPadColorDirect(midiControls.PadOfficeCamera, midiPadColorForState(on))
 	}
 
 	// turn off unused pads
 	assigned := map[uint8]bool{
 		midiControls.PadFlowerLamp: true, midiControls.PadMushroomLamp: true,
 		midiControls.PadSpeaker: true, midiControls.PadTV: true,
-		midiControls.PadCamera1: true, midiControls.PadCamera2: true,
+		midiControls.PadLivingRoomCamera: true, midiControls.PadOfficeCamera: true,
 	}
 	for pad := uint8(36); pad <= 51; pad++ {
 		if !assigned[pad] {
@@ -152,11 +152,11 @@ func startPollers(stop <-chan struct{}) {
 	})
 	go pollEvery(30*time.Second, stop, func() {
 		states := kasaRefreshCameras()
-		if len(states) > 0 {
-			midiSetPadColor(midiControls.PadCamera1, midiPadColorForState(states[0]))
+		if on, ok := states[LIVING_ROOM]; ok {
+			midiSetPadColor(midiControls.PadLivingRoomCamera, midiPadColorForState(on))
 		}
-		if len(states) > 1 {
-			midiSetPadColor(midiControls.PadCamera2, midiPadColorForState(states[1]))
+		if on, ok := states[OFFICE]; ok {
+			midiSetPadColor(midiControls.PadOfficeCamera, midiPadColorForState(on))
 		}
 	})
 	go pollEvery(30*time.Second, stop, func() {
