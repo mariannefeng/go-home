@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"sync"
 	"time"
@@ -440,18 +441,38 @@ func queryCameraSysinfo(ip string) (*kasa.Sysinfo, bool, error) {
 	data := make([]byte, size)
 	total := 0
 	for total < int(size) {
-		n, err := conn.Read(data[total:])
-		if err != nil {
-			return nil, false, err
-		}
+		n, readErr := conn.Read(data[total:])
 		total += n
+		if readErr != nil {
+			// Some devices close the connection right after sending the final bytes.
+			// If we've read the full payload, treat EOF as success.
+			if readErr == io.EOF && total == int(size) {
+				break
+			}
+
+			// Print partial payload to help diagnose what we received.
+			raw := kasa.Unscramble(data[:total])
+			fmt.Printf("  camera sysinfo read ip=%s expected=%d got=%d err=%v raw=%s\n",
+				ip, size, total, readErr, string(raw))
+			return nil, false, readErr
+		}
 	}
 
-	raw := kasa.Unscramble(data)
+	raw := kasa.Unscramble(data[:total])
+	fmt.Printf("  camera sysinfo raw ip=%s bytes=%d raw=%s\n", ip, total, string(raw))
+
 	var kd kasa.KasaDevice
 	if err := json.Unmarshal(raw, &kd); err != nil {
 		return nil, false, fmt.Errorf("unmarshal camera sysinfo: %w (raw: %s)", err, string(raw))
 	}
+
+	fmt.Printf("  camera sysinfo parsed ip=%s relay_state=%d alias=%q dev_name=%q model=%q\n",
+		ip,
+		kd.GetSysinfo.Sysinfo.RelayState,
+		kd.GetSysinfo.Sysinfo.Alias,
+		kd.GetSysinfo.Sysinfo.DevName,
+		kd.GetSysinfo.Sysinfo.Model,
+	)
 
 	return &kd.GetSysinfo.Sysinfo, kd.GetSysinfo.Sysinfo.RelayState == 1, nil
 }
