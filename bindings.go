@@ -39,6 +39,18 @@ var noteBindings = []noteBinding{
 			midiSetPadColor(midiControls.PadMushroomLamp, midiPadColorForState(on))
 		}
 	}},
+	{PadChannel, midiControls.PadCamera1, "TOGGLE CAMERA 1", func() {
+		on, err := kasaToggleCamera(0)
+		if err == nil {
+			midiSetPadColor(midiControls.PadCamera1, midiPadColorForState(on))
+		}
+	}},
+	{PadChannel, midiControls.PadCamera2, "TOGGLE CAMERA 2", func() {
+		on, err := kasaToggleCamera(1)
+		if err == nil {
+			midiSetPadColor(midiControls.PadCamera2, midiPadColorForState(on))
+		}
+	}},
 	{PadChannel, midiControls.PadSpeaker, "TOGGLE SPEAKER", func() {
 		midiSetPadPulse(midiControls.PadSpeaker, ColorPulseLoad)
 		connected, err := bluetoothToggle()

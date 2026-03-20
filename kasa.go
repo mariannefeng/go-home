@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,6 +31,23 @@ var knownBulbs = []struct {
 var (
 	bulbs map[string]bulbState
 	mu    sync.Mutex
+)
+
+type cameraInfo struct {
+	alias   string
+	devName string
+	model   string
+	ip      string
+}
+
+type cameraState struct {
+	info cameraInfo
+	on   bool
+}
+
+var (
+	cameras   []cameraState
+	camerasMu sync.Mutex
 )
 
 type bulbState struct {
@@ -64,6 +83,8 @@ func kasaInit() {
 		}
 	}
 	fmt.Println()
+
+	kasaInitCameras()
 }
 
 func kasaGetBulbStates() map[string]bool {
@@ -124,6 +145,186 @@ func kasaToggleLamp(alias string) (on bool, err error) {
 	}
 	fmt.Printf("  %s → %s\n", alias, state)
 	return newState, nil
+}
+
+func kasaInitCameras() {
+	fmt.Println("Discovering Kasa cameras...")
+
+	// BroadcastDiscovery blocks until its internal listener timeout fires.
+	// Keep this small since we only need 2 devices.
+	devices, err := kasa.BroadcastDiscovery(2, 2)
+	if err != nil {
+		fmt.Printf("  camera discovery error: %s\n\n", err)
+		return
+	}
+
+	type discovered struct {
+		ip string
+		si *kasa.Sysinfo
+	}
+	all := make([]discovered, 0, len(devices))
+	for ip, si := range devices {
+		all = append(all, discovered{ip: ip, si: si})
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].ip < all[j].ip })
+
+	fmt.Printf("  discovered %d device(s):\n", len(all))
+	for _, d := range all {
+		on := d.si.RelayState == 1
+		fmt.Printf("    - %s (%s) model=%s ip=%s relay_state=%d (on=%t)\n",
+			d.si.Alias, d.si.DevName, d.si.Model, d.ip, d.si.RelayState, on)
+	}
+
+	looksLikeCamera := func(si *kasa.Sysinfo) bool {
+		// Camera models are typically KCxxx (TP-Link Kasa cameras).
+		model := strings.ToUpper(si.Model)
+		alias := strings.ToUpper(si.Alias)
+		devName := strings.ToUpper(si.DevName)
+		feature := strings.ToUpper(si.Feature)
+
+		return strings.Contains(model, "KC") ||
+			strings.Contains(alias, "CAM") ||
+			strings.Contains(devName, "CAM") ||
+			strings.Contains(feature, "CAM")
+	}
+
+	candidates := make([]cameraInfo, 0, 2)
+	for _, d := range all {
+		if looksLikeCamera(d.si) {
+			candidates = append(candidates, cameraInfo{
+				alias:   d.si.Alias,
+				devName: d.si.DevName,
+				model:   d.si.Model,
+				ip:      d.ip,
+			})
+		}
+	}
+
+	// If we can't confidently identify two cameras, fall back to first two discovered
+	// devices so we can still wire/ping the expected “on/off” behavior.
+	if len(candidates) < 2 && len(all) >= 2 {
+		fmt.Println("  couldn't identify 2 cameras via model/name; falling back to first two discovered devices")
+		candidates = candidates[:0]
+		for i := 0; i < 2 && i < len(all); i++ {
+			candidates = append(candidates, cameraInfo{
+				alias:   all[i].si.Alias,
+				devName: all[i].si.DevName,
+				model:   all[i].si.Model,
+				ip:      all[i].ip,
+			})
+		}
+	}
+
+	if len(candidates) == 0 {
+		fmt.Println()
+		fmt.Println("  no camera candidates found (camera pads will be inactive)")
+		return
+	}
+	if len(candidates) < 2 {
+		fmt.Printf("  found %d camera candidate(s); camera pad for missing device will be inactive\n", len(candidates))
+	}
+
+	camerasMu.Lock()
+	cameras = make([]cameraState, len(candidates))
+	camerasMu.Unlock()
+
+	for i := range candidates {
+		on, err := queryCameraOn(candidates[i].ip)
+		if err != nil {
+			fmt.Printf("  camera[%d] (%s) ip=%s query error: %s; using relay_state from discovery\n", i+1, candidates[i].alias, candidates[i].ip, err)
+			// Best-effort: use relay_state from discovery if available.
+			// (If missing, default to false.)
+			on = false
+			for _, d := range all {
+				if d.ip == candidates[i].ip {
+					on = d.si.RelayState == 1
+					break
+				}
+			}
+		}
+
+		camerasMu.Lock()
+		cameras[i] = cameraState{info: candidates[i], on: on}
+		camerasMu.Unlock()
+	}
+
+	for i := range cameras {
+		fmt.Printf("  CAMERA %d: alias=%q ip=%s model=%s on=%t\n",
+			i+1, cameras[i].info.alias, cameras[i].info.ip, cameras[i].info.model, cameras[i].on)
+	}
+	fmt.Println()
+}
+
+func kasaGetCameraStates() []bool {
+	camerasMu.Lock()
+	defer camerasMu.Unlock()
+
+	out := make([]bool, len(cameras))
+	for i := range cameras {
+		out[i] = cameras[i].on
+	}
+	return out
+}
+
+func kasaRefreshCameras() []bool {
+	camerasMu.Lock()
+	n := len(cameras)
+	ips := make([]string, 0, n)
+	for i := 0; i < n; i++ {
+		ips = append(ips, cameras[i].info.ip)
+	}
+	camerasMu.Unlock()
+
+	for i := 0; i < n; i++ {
+		on, err := queryCameraOn(ips[i])
+		if err != nil {
+			continue
+		}
+
+		camerasMu.Lock()
+		cameras[i].on = on
+		camerasMu.Unlock()
+	}
+
+	return kasaGetCameraStates()
+}
+
+func kasaToggleCamera(idx int) (on bool, err error) {
+	camerasMu.Lock()
+	if idx < 0 || idx >= len(cameras) {
+		camerasMu.Unlock()
+		return false, fmt.Errorf("camera idx %d out of range", idx)
+	}
+	current := cameras[idx]
+	camerasMu.Unlock()
+
+	target := !current.on
+	if err := setCameraOn(current.info.ip, target); err != nil {
+		return current.on, err
+	}
+
+	// Verify by querying state, since some devices may accept the TCP write
+	// but not actually change state.
+	time.Sleep(200 * time.Millisecond)
+	verifiedOn, qerr := queryCameraOn(current.info.ip)
+	if qerr != nil {
+		verifiedOn = target
+	}
+
+	camerasMu.Lock()
+	// idx might still be valid; if cameras were re-discovered concurrently (rare),
+	// we keep the last-known state.
+	if idx >= 0 && idx < len(cameras) {
+		cameras[idx].on = verifiedOn
+	}
+	camerasMu.Unlock()
+
+	state := "OFF"
+	if verifiedOn {
+		state = "ON"
+	}
+	fmt.Printf("  CAMERA[%d] %s (%s) → %s\n", idx+1, current.info.alias, current.info.ip, state)
+	return verifiedOn, nil
 }
 
 var lastBrightnessSend sync.Map
@@ -252,4 +453,54 @@ func sendKasaCommand(ip, cmd string) error {
 
 	_, err = conn.Write(kasa.ScrambleTCP(cmd))
 	return err
+}
+
+func queryCameraOn(ip string) (bool, error) {
+	// Many Kasa “relay-like” devices expose `relay_state` via get_sysinfo.
+	dialer := &net.Dialer{
+		Timeout:  2 * time.Second,
+		Deadline: time.Now().Add(3 * time.Second),
+	}
+
+	conn, err := dialer.Dial("tcp4", fmt.Sprintf("%s:9999", ip))
+	if err != nil {
+		return false, err
+	}
+	defer conn.Close()
+
+	if _, err = conn.Write(kasa.ScrambleTCP(kasa.CmdGetSysinfo)); err != nil {
+		return false, err
+	}
+
+	header := make([]byte, 4)
+	if _, err = conn.Read(header); err != nil {
+		return false, err
+	}
+	size := binary.BigEndian.Uint32(header)
+
+	data := make([]byte, size)
+	total := 0
+	for total < int(size) {
+		n, err := conn.Read(data[total:])
+		if err != nil {
+			return false, err
+		}
+		total += n
+	}
+
+	raw := kasa.Unscramble(data)
+	var kd kasa.KasaDevice
+	if err := json.Unmarshal(raw, &kd); err != nil {
+		return false, fmt.Errorf("unmarshal camera sysinfo: %w (raw: %s)", err, string(raw))
+	}
+	return kd.GetSysinfo.Sysinfo.RelayState == 1, nil
+}
+
+func setCameraOn(ip string, on bool) error {
+	state := 0
+	if on {
+		state = 1
+	}
+	cmd := fmt.Sprintf(kasa.CmdSetRelayState, state)
+	return sendKasaCommand(ip, cmd)
 }
