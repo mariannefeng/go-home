@@ -17,6 +17,7 @@ func main() {
 
 	kasaInit()
 	spotifyInit()
+	tvInit()
 	midiInit(handleMIDI)
 	resetPadColors()
 

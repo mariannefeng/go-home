@@ -11,6 +11,18 @@ const (
 	ADBAddr = "192.168.1.175:5555"
 )
 
+func tvInit() {
+	out, err := exec.Command("adb", "connect", ADBAddr).CombinedOutput()
+	s := strings.TrimSpace(string(out))
+	if err != nil {
+		fmt.Printf("TV: adb connect: %v (%s)\n", err, s)
+		return
+	}
+	if s != "" {
+		fmt.Printf("TV: %s\n", s)
+	}
+}
+
 func tvIsOn() bool {
 	out, err := exec.Command("adb", "-s", ADBAddr, "shell", "dumpsys", "power").CombinedOutput()
 	if err != nil {
