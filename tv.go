@@ -55,3 +55,11 @@ func tvToggle() (on bool, err error) {
 	fmt.Printf("  TV → %s (was %v)\n", state, wasOn)
 	return on, nil
 }
+
+func tvIsConnected() bool {
+	out, err := exec.Command("adb", "-s", ADBAddr, "shell", "echo", "connected").CombinedOutput()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(out), "connected")
+}

@@ -30,6 +30,9 @@ const (
 	ColorError = 5
 
 	ColorPulseLoad = 45
+
+	// TVConnectionCC — Shift on MIDI in is ch 1 CC 108; LED feedback is DAW out MIDI ch 16 same CC.
+	TVConnectionCC = 108
 )
 
 var (
@@ -165,6 +168,24 @@ func midiSetPadColor(pad, color uint8) {
 		return
 	}
 	midiSetPadColorDirect(pad, color)
+}
+
+// midiSetCCButtonColorDirect sets LED colour for a DAW-mode CC control (Launchkey: ch 16, value = palette / grayscale).
+func midiSetCCButtonColorDirect(cc, color uint8) {
+	if send == nil {
+		return
+	}
+	if err := send(midi.ControlChange(DawModeChannel, cc, color)); err != nil {
+		fmt.Printf("error setting CC %d colour: %s\n", cc, err)
+	}
+}
+
+func midiPaintTVConnectionFromADB() {
+	var c uint8 = ColorOff
+	if tvIsConnected() {
+		c = ColorOn
+	}
+	midiSetCCButtonColorDirect(TVConnectionCC, c)
 }
 
 func midiSetPadPulse(pad, color uint8) {

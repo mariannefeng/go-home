@@ -80,6 +80,17 @@ func handleMIDI(msg midi.Message, timestampms int32) {
 		fmt.Printf("[%6dms] ch=%d  pitch=%d\n", timestampms, ch, pitchRel)
 
 	case msg.GetControlChange(&ch, &cc, &val):
+		// Launchkey Mini: Shift reports as CC TVConnectionCC on MIDI ch 1 (KnobChannel).
+		if ch == KnobChannel && cc == TVConnectionCC {
+			if !PadLocked.Load() {
+				if val > 0 {
+					midiPaintTVConnectionFromADB()
+				} else {
+					midiSetCCButtonColorDirect(TVConnectionCC, ColorOff)
+				}
+			}
+			return
+		}
 		for _, b := range ccBindings {
 			if ch == b.ch && cc == b.cc {
 				if b.onAny != nil {
