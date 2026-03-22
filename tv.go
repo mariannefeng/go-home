@@ -56,12 +56,17 @@ func tvToggle() (on bool, err error) {
 	return on, nil
 }
 
-func tvIsConnected() bool {
+func tvIsConnected() DeviceStatus {
 	out, err := exec.Command("adb", "-s", ADBAddr, "shell", "echo", "connected").CombinedOutput()
 	if err != nil {
-		return false
+		return StatusIndeterminate
 	}
-	return strings.Contains(string(out), "connected")
+
+	if strings.Contains(string(out), "connected") {
+		return StatusGood
+	}
+
+	return StatusBad
 }
 
 func tvVolumeUp() {

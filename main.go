@@ -80,18 +80,6 @@ func handleMIDI(msg midi.Message, timestampms int32) {
 		fmt.Printf("[%6dms] ch=%d  pitch=%d\n", timestampms, ch, pitchRel)
 
 	case msg.GetControlChange(&ch, &cc, &val):
-		fmt.Printf("[%6dms] CCdebuggg       ch=%d  cc=%3d   val=%3d\n", timestampms, ch, cc, val)
-		// Launchkey Mini: Shift reports as CC TVConnectionCC on MIDI ch 1 (KnobChannel).
-		// if ch == KnobChannel && cc == TVConnectionCC {
-		// 	if !PadLocked.Load() {
-		// 		if val > 0 {
-		// 			midiPaintTVConnectionFromADB()
-		// 		} else {
-		// 			midiSetCCButtonColorDirect(TVConnectionCC, ColorOff)
-		// 		}
-		// 	}
-		// 	return
-		// }
 		for _, b := range ccBindings {
 			if ch == b.ch && cc == b.cc {
 				if b.onAny != nil {
@@ -216,4 +204,15 @@ func startPollers(stop <-chan struct{}) {
 		PadLocked.Store(false)
 		resetPadColors()
 	})
+	go pollEvery(10*time.Second, stop, refreshStatusKeyLEDs)
+}
+
+func refreshStatusKeyLEDs() {
+	midiSetStatusKeyForDeviceStatus(StatusKeyTV, tvIsConnected())
+	// midiSetStatusKeyColor(StatusKeyBluetooth, midiPadColorForState(bluetoothIsConnected()))
+	// midiSetStatusKeyColor(StatusKeyWiFi, midiPadColorForState(wifiIsConnected()))
+	// midiSetStatusKeyColor(StatusKeyLivingRoomCam, midiPadColorForState(livingRoomCameraIsConnected()))
+	// midiSetStatusKeyColor(StatusKeyOfficeCam, midiPadColorForState(officeCameraIsConnected()))
+	// midiSetStatusKeyColor(StatusKeyFlowerLamp, midiPadColorForState(flowerLampIsOn()))
+	// midiSetStatusKeyColor(StatusKeyMushroomLamp, midiPadColorForState(mushroomLampIsOn()))
 }

@@ -16,23 +16,37 @@ const (
 	PadChannel       = 9
 	KnobChannel      = 0
 	PitchBendChannel = 0
-	KeyChannel       = 0
+	KeyChannel       = 0 // ch 1: stationary LED for keys / non-drum controls (Novation)
 	TransportChannel = 15
+
+	// KeyChannelFlash / KeyChannelPulse — same note numbers as KeyChannel; only the channel selects LED mode.
+	KeyChannelFlash = 1 // ch 2: flashing
+	KeyChannelPulse = 2 // ch 3: pulsing (synced to MIDI clock / default tempo)
 
 	DawModeChannel = 15
 	DawModeNote    = 12
 
-	PadChannelPulse = 11
+	PadChannelPulse = 11 // ch 12: pulsing pads only (drum mode)
 
 	ColorOff   = 0
 	ColorOn    = 21
 	ColorNotOn = 53
 	ColorError = 5
 
+	ColorStatusGood          = 87
+	ColorStatusBad           = 72
+	ColorStatusIndeterminate = 13
+
 	ColorPulseLoad = 45
 
-	// TVConnectionCC — Shift on MIDI in is ch 1 CC 108; LED feedback is DAW out MIDI ch 16 same CC.
-	TVConnectionCC = 108
+	// Status keys: MIDI Port reports them as NoteOn ch 0 (Launchkey); DAW out uses the same note + velocity as palette index.
+	StatusKeyBluetooth     = 119
+	StatusKeyTV            = 103
+	StatusKeyWiFi          = 100
+	StatusKeyLivingRoomCam = 97
+	StatusKeyOfficeCam     = 96
+	StatusKeyFlowerLamp    = 112
+	StatusKeyMushroomLamp  = 113
 )
 
 var (
@@ -147,6 +161,14 @@ func midiPadColorForState(active bool) uint8 {
 	return ColorNotOn
 }
 
+type DeviceStatus string
+
+const (
+	StatusGood          DeviceStatus = "good"
+	StatusBad           DeviceStatus = "bad"
+	StatusIndeterminate DeviceStatus = "indeterminate"
+)
+
 func midiSetPadColorDirect(pad, color uint8) {
 	if send == nil {
 		return
@@ -184,20 +206,71 @@ func midiSetCCButtonColorDirect(cc, color uint8) {
 	}
 }
 
-func midiPaintTVConnectionFromADB() {
-	var c uint8 = ColorOff
-	if tvIsConnected() {
-		c = ColorOn
+// midiSetStatusKeyColorDirect sets LED colour for keys that appear as NoteOn on MIDI Port ch 0 (not drum pads, not CC).
+func midiSetStatusKeyColorDirect(note, color uint8) {
+	if send == nil {
+		return
 	}
-	midiSetCCButtonColorDirect(TVConnectionCC, c)
+	if err := send(midi.NoteOn(KeyChannel, note, color)); err != nil {
+		fmt.Printf("error setting status key %d colour: %s\n", note, err)
+	}
+}
+
+func midiSetStatusKeyColor(note, color uint8) {
+	if PadLocked.Load() {
+		return
+	}
+	midiSetStatusKeyColorDirect(note, color)
+}
+
+func midiSetStatusKeyForDeviceStatus(note uint8, status DeviceStatus) {
+	switch status {
+	case StatusGood:
+		midiClearStatusKeyPulseDirect(note)
+		midiSetStatusKeyColor(note, ColorStatusGood)
+	case StatusBad:
+		midiSetStatusKeyPulse(note, ColorStatusBad)
+	case StatusIndeterminate:
+		midiSetStatusKeyPulse(note, ColorStatusIndeterminate)
+	default:
+		midiClearStatusKeyPulseDirect(note)
+		midiSetStatusKeyColor(note, ColorOff)
+	}
+}
+
+func midiClearStatusKeyPulseDirect(note uint8) {
+	if send == nil {
+		return
+	}
+	_ = send(midi.NoteOn(KeyChannelPulse, note, 0))
+}
+
+// midiSetStatusKeyPulseDirect drives the same physical LED as midiSetStatusKeyColorDirect but in pulsing mode
+// (Launchkey: Note On on MIDI channel 3, same note as the control’s report on channel 1).
+func midiSetStatusKeyPulseDirect(note, color uint8) {
+	if send == nil {
+		return
+	}
+	if err := send(midi.NoteOn(KeyChannelPulse, note, color)); err != nil {
+		fmt.Printf("error setting status key %d pulse: %s\n", note, err)
+	}
+}
+
+func midiSetStatusKeyPulse(note, color uint8) {
+	if PadLocked.Load() {
+		return
+	}
+	midiSetStatusKeyPulseDirect(note, color)
 }
 
 func midiSetPadPulse(pad, color uint8) {
 	if PadLocked.Load() || send == nil {
 		return
 	}
+
 	if err := send(midi.NoteOn(PadChannelPulse, pad, color)); err != nil {
 		fmt.Printf("error setting pad %d pulse: %s\n", pad, err)
+
 	}
 }
 
