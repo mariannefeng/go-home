@@ -153,10 +153,10 @@ func resetPadColors() {
 	midiSetPadColorDirect(midiControls.PadTV, midiPadColorForState(tvIsOn()))
 
 	cameraStates := kasaGetCameraStates()
-	if on, ok := cameraStates[LIVING_ROOM]; ok {
+	if on, ok := cameraStates[LivingRoom]; ok {
 		midiSetPadColorDirect(midiControls.PadLivingRoomCamera, midiPadColorForState(on))
 	}
-	if on, ok := cameraStates[OFFICE]; ok {
+	if on, ok := cameraStates[Office]; ok {
 		midiSetPadColorDirect(midiControls.PadOfficeCamera, midiPadColorForState(on))
 	}
 
@@ -198,10 +198,10 @@ func startPollers(stop <-chan struct{}) {
 	})
 	go pollEvery(30*time.Second, stop, func() {
 		states := kasaRefreshCameras()
-		if on, ok := states[LIVING_ROOM]; ok {
+		if on, ok := states[LivingRoom]; ok {
 			midiSetPadColor(midiControls.PadLivingRoomCamera, midiPadColorForState(on))
 		}
-		if on, ok := states[OFFICE]; ok {
+		if on, ok := states[Office]; ok {
 			midiSetPadColor(midiControls.PadOfficeCamera, midiPadColorForState(on))
 		}
 	})
@@ -228,13 +228,15 @@ func startPollers(stop <-chan struct{}) {
 }
 
 func refreshStatusKeyLEDs() {
-	fmt.Println("refreshing status key LEDs")
 	midiSetStatusKeyForDeviceStatus(StatusKeyTV, tvStatus())
-	// midiSetStatusKeyForDeviceStatus(StatusKeyBluetooth, bluetoothStatus())
-	midiSetStatusKeyForDeviceStatus(StatusKeyBluetooth, StatusIndeterminate)
+	midiSetStatusKeyForDeviceStatus(StatusKeyBluetooth, bluetoothStatus())
 	midiSetStatusKeyForDeviceStatus(StatusKeyInternet, internetStatus())
-	// midiSetStatusKeyColor(StatusKeyLivingRoomCam, midiPadColorForState(livingRoomCameraIsConnected()))
-	// midiSetStatusKeyColor(StatusKeyOfficeCam, midiPadColorForState(officeCameraIsConnected()))
-	// midiSetStatusKeyColor(StatusKeyFlowerLamp, midiPadColorForState(flowerLampIsOn()))
-	// midiSetStatusKeyColor(StatusKeyMushroomLamp, midiPadColorForState(mushroomLampIsOn()))
+
+	cameraStatuses := kasaCameraStatus()
+	midiSetStatusKeyForDeviceStatus(StatusKeyLivingRoomCam, cameraStatuses[LivingRoom])
+	midiSetStatusKeyForDeviceStatus(StatusKeyOfficeCam, cameraStatuses[Office])
+
+	lightStatuses := kasaLightStatus()
+	midiSetStatusKeyForDeviceStatus(StatusKeyFlowerLamp, lightStatuses[FlowerLamp])
+	midiSetStatusKeyForDeviceStatus(StatusKeyMushroomLamp, lightStatuses[MushroomLamp])
 }

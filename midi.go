@@ -224,28 +224,13 @@ func midiSetStatusKeyColor(note, color uint8) {
 }
 
 func midiSetStatusKeyForDeviceStatus(note uint8, status DeviceStatus) {
-	fmt.Printf("setting status key %d to %s\n", note, status)
 	switch status {
 	case StatusGood:
-		fmt.Printf("setting status key %d to good\n", note)
 		midiSetStatusKeyPulse(note, ColorStatusGood)
 	case StatusBad:
-		fmt.Printf("setting status key %d to bad\n", note)
 		midiSetStatusKeyPulse(note, ColorStatusBad)
 	case StatusIndeterminate:
-		fmt.Printf("setting status key %d to indeterminate\n", note)
 		midiSetStatusKeyPulse(note, ColorStatusIndeterminate)
-	}
-}
-
-// midiSetStatusKeyPulseDirect drives the same physical LED as midiSetStatusKeyColorDirect but in pulsing mode
-// (Launchkey: Note On on MIDI channel 3, same note as the control’s report on channel 1).
-func midiSetStatusKeyPulseDirect(note, color uint8) {
-	if send == nil {
-		return
-	}
-	if err := send(midi.NoteOn(KeyChannelPulse, note, color)); err != nil {
-		fmt.Printf("error setting status key %d pulse: %s\n", note, err)
 	}
 }
 
@@ -253,7 +238,13 @@ func midiSetStatusKeyPulse(note, color uint8) {
 	if PadLocked.Load() {
 		return
 	}
-	midiSetStatusKeyPulseDirect(note, color)
+
+	if send == nil {
+		return
+	}
+	if err := send(midi.NoteOn(KeyChannelPulse, note, color)); err != nil {
+		fmt.Printf("error setting status key %d pulse: %s\n", note, err)
+	}
 }
 
 func midiSetPadPulse(pad, color uint8) {

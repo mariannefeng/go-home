@@ -24,10 +24,10 @@ const (
 	FlowerLamp     = "Flower lamp"
 	FlowerLampIP   = "192.168.1.153"
 
-	LIVING_ROOM   = "nommy cam"
-	LIVING_ROOMIP = "192.168.1.156"
-	OFFICE        = "awwfice"
-	OFFICEIP      = "192.168.1.151"
+	LivingRoom   = "nommy cam"
+	LivingRoomIP = "192.168.1.156"
+	Office       = "awwfice"
+	OfficeIP     = "192.168.1.151"
 
 	KasaCamHTTPSPort = 10443
 	KasaCamHTTPSPath = "/data/LINKIE.json"
@@ -47,15 +47,14 @@ var (
 )
 
 type cameraInfo struct {
+}
+
+type cameraState struct {
 	alias   string
 	devName string
 	model   string
 	ip      string
-}
-
-type cameraState struct {
-	info cameraInfo
-	on   bool
+	on      bool
 }
 
 var (
@@ -166,8 +165,8 @@ func kasaToggleLamp(alias string) (on bool, err error) {
 func kasaInitCameras() {
 	fmt.Println("Connecting to Kasa cameras...")
 	knownCameras := map[string]string{
-		LIVING_ROOM: LIVING_ROOMIP,
-		OFFICE:      OFFICEIP,
+		LivingRoom: LivingRoomIP,
+		Office:     OfficeIP,
 	}
 	camerasMu.Lock()
 	cameras = make(map[string]cameraState, len(knownCameras))
@@ -186,20 +185,18 @@ func kasaInitCameras() {
 		}
 		camerasMu.Lock()
 		cameras[alias] = cameraState{
-			info: cameraInfo{
-				alias:   alias,
-				devName: devName,
-				model:   model,
-				ip:      ip,
-			},
-			on: on,
+			alias:   alias,
+			devName: devName,
+			model:   model,
+			ip:      ip,
+			on:      on,
 		}
 		camerasMu.Unlock()
 	}
 	camerasMu.Lock()
 	for alias, st := range cameras {
 		fmt.Printf("alias=%q ip=%s model=%s on=%t\n",
-			alias, st.info.ip, st.info.model, st.on)
+			alias, st.ip, st.model, st.on)
 	}
 	camerasMu.Unlock()
 	fmt.Println()
@@ -216,11 +213,49 @@ func kasaGetCameraStates() map[string]bool {
 	return out
 }
 
+func kasaCameraStatus() map[string]DeviceStatus {
+	result := make(map[string]DeviceStatus, len(cameras))
+
+	for _, c := range cameras {
+		_, on, err := queryCameraSysinfo(c.ip)
+		if err != nil {
+			result[c.alias] = StatusIndeterminate
+			continue
+		}
+
+		if on {
+			result[c.alias] = StatusGood
+		} else {
+			result[c.alias] = StatusBad
+		}
+	}
+
+	return result
+}
+
+func kasaLightStatus() map[string]DeviceStatus {
+	result := make(map[string]DeviceStatus, len(bulbs))
+	for _, b := range bulbs {
+		ls, err := queryLightState(b.ip)
+		if err != nil {
+			result[b.alias] = StatusIndeterminate
+			continue
+		}
+
+		if ls.OnOff == 1 {
+			result[b.alias] = StatusGood
+		} else {
+			result[b.alias] = StatusBad
+		}
+	}
+	return result
+}
+
 func kasaRefreshCameras() map[string]bool {
 	camerasMu.Lock()
 	ips := make(map[string]string, len(cameras))
 	for alias, st := range cameras {
-		ips[alias] = st.info.ip
+		ips[alias] = st.ip
 	}
 	camerasMu.Unlock()
 
@@ -249,14 +284,14 @@ func kasaToggleCamera(alias string) (on bool, err error) {
 	}
 
 	target := !current.on
-	if err := setCameraOn(current.info.ip, target); err != nil {
+	if err := setCameraOn(current.ip, target); err != nil {
 		return current.on, err
 	}
 
 	// Verify by querying state, since some devices may accept the write
 	// but not actually change state.
 	time.Sleep(200 * time.Millisecond)
-	verifiedOn, qerr := queryCameraOn(current.info.ip)
+	verifiedOn, qerr := queryCameraOn(current.ip)
 	if qerr != nil {
 		verifiedOn = target
 	}
@@ -270,7 +305,7 @@ func kasaToggleCamera(alias string) (on bool, err error) {
 	if verifiedOn {
 		state = "ON"
 	}
-	fmt.Printf("  CAMERA %s (%s) → %s\n", current.info.alias, current.info.ip, state)
+	fmt.Printf("  CAMERA %s (%s) → %s\n", current.alias, current.ip, state)
 	return verifiedOn, nil
 }
 

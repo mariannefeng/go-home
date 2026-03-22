@@ -44,14 +44,14 @@ var noteBindings = []noteBinding{
 	}},
 	{PadChannel, midiControls.PadLivingRoomCamera, "TOGGLE LIVING ROOM CAMERA", func() {
 		midiSetPadPulse(midiControls.PadLivingRoomCamera, ColorPulseLoad)
-		on, err := kasaToggleCamera(LIVING_ROOM)
+		on, err := kasaToggleCamera(LivingRoom)
 		if err == nil {
 			midiSetPadColor(midiControls.PadLivingRoomCamera, midiPadColorForState(on))
 		}
 	}},
 	{PadChannel, midiControls.PadOfficeCamera, "TOGGLE OFFICE CAMERA", func() {
 		midiSetPadPulse(midiControls.PadOfficeCamera, ColorPulseLoad)
-		on, err := kasaToggleCamera(OFFICE)
+		on, err := kasaToggleCamera(Office)
 		if err == nil {
 			midiSetPadColor(midiControls.PadOfficeCamera, midiPadColorForState(on))
 		}
