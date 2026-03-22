@@ -42,7 +42,7 @@ const (
 	// Status keys: MIDI Port reports them as NoteOn ch 0 (Launchkey); DAW out uses the same note + velocity as palette index.
 	StatusKeyBluetooth     = 119
 	StatusKeyTV            = 103
-	StatusKeyWiFi          = 100
+	StatusKeyInternet      = 100
 	StatusKeyLivingRoomCam = 97
 	StatusKeyOfficeCam     = 96
 	StatusKeyFlowerLamp    = 112
@@ -224,25 +224,18 @@ func midiSetStatusKeyColor(note, color uint8) {
 }
 
 func midiSetStatusKeyForDeviceStatus(note uint8, status DeviceStatus) {
+	fmt.Printf("setting status key %d to %s\n", note, status)
 	switch status {
 	case StatusGood:
-		midiClearStatusKeyPulseDirect(note)
-		midiSetStatusKeyColor(note, ColorStatusGood)
+		fmt.Printf("setting status key %d to good\n", note)
+		midiSetStatusKeyPulse(note, ColorStatusGood)
 	case StatusBad:
+		fmt.Printf("setting status key %d to bad\n", note)
 		midiSetStatusKeyPulse(note, ColorStatusBad)
 	case StatusIndeterminate:
+		fmt.Printf("setting status key %d to indeterminate\n", note)
 		midiSetStatusKeyPulse(note, ColorStatusIndeterminate)
-	default:
-		midiClearStatusKeyPulseDirect(note)
-		midiSetStatusKeyColor(note, ColorOff)
 	}
-}
-
-func midiClearStatusKeyPulseDirect(note uint8) {
-	if send == nil {
-		return
-	}
-	_ = send(midi.NoteOn(KeyChannelPulse, note, 0))
 }
 
 // midiSetStatusKeyPulseDirect drives the same physical LED as midiSetStatusKeyColorDirect but in pulsing mode

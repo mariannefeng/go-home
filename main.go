@@ -20,6 +20,7 @@ func main() {
 	tvInit()
 	midiInit(handleMIDI)
 	resetPadColors()
+	refreshStatusKeyLEDs()
 
 	stopPoll := make(chan struct{})
 	startPollers(stopPoll)
@@ -107,14 +108,33 @@ func handleMIDI(msg midi.Message, timestampms int32) {
 	}
 }
 
-func internetConnected() bool {
-	d := net.Dialer{Timeout: 3 * time.Second}
-	conn, err := d.Dial("tcp", "1.1.1.1:443")
-	if err != nil {
-		return false
+func internetStatus() DeviceStatus {
+	const timeout = 3 * time.Second
+	endpoints := []string{"1.1.1.1:443", "8.8.8.8:443"}
+	d := net.Dialer{Timeout: timeout}
+	ok := 0
+	for _, addr := range endpoints {
+		conn, err := d.Dial("tcp", addr)
+		if err != nil {
+			continue
+		}
+		_ = conn.Close()
+		ok++
 	}
-	_ = conn.Close()
-	return true
+
+	if ok == 0 {
+		return StatusBad
+	}
+
+	if ok == len(endpoints) {
+		return StatusGood
+	}
+
+	return StatusIndeterminate
+}
+
+func internetConnected() bool {
+	return internetStatus() == StatusGood
 }
 
 func restartServer() {
@@ -208,9 +228,11 @@ func startPollers(stop <-chan struct{}) {
 }
 
 func refreshStatusKeyLEDs() {
-	midiSetStatusKeyForDeviceStatus(StatusKeyTV, tvIsConnected())
-	// midiSetStatusKeyColor(StatusKeyBluetooth, midiPadColorForState(bluetoothIsConnected()))
-	// midiSetStatusKeyColor(StatusKeyWiFi, midiPadColorForState(wifiIsConnected()))
+	fmt.Println("refreshing status key LEDs")
+	midiSetStatusKeyForDeviceStatus(StatusKeyTV, tvStatus())
+	// midiSetStatusKeyForDeviceStatus(StatusKeyBluetooth, bluetoothStatus())
+	midiSetStatusKeyForDeviceStatus(StatusKeyBluetooth, StatusIndeterminate)
+	midiSetStatusKeyForDeviceStatus(StatusKeyInternet, internetStatus())
 	// midiSetStatusKeyColor(StatusKeyLivingRoomCam, midiPadColorForState(livingRoomCameraIsConnected()))
 	// midiSetStatusKeyColor(StatusKeyOfficeCam, midiPadColorForState(officeCameraIsConnected()))
 	// midiSetStatusKeyColor(StatusKeyFlowerLamp, midiPadColorForState(flowerLampIsOn()))

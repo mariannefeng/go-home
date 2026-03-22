@@ -12,11 +12,18 @@ const (
 )
 
 func bluetoothIsConnected() bool {
+	return bluetoothStatus() == StatusGood
+}
+
+func bluetoothStatus() DeviceStatus {
 	out, err := exec.Command("bluetoothctl", "info", SpeakerMAC).CombinedOutput()
 	if err != nil {
-		return false
+		return StatusIndeterminate
 	}
-	return strings.Contains(string(out), "Connected: yes")
+	if strings.Contains(string(out), "Connected: yes") {
+		return StatusGood
+	}
+	return StatusBad
 }
 
 func bluetoothToggle() (connected bool, err error) {
