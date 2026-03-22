@@ -63,3 +63,21 @@ func tvIsConnected() bool {
 	}
 	return strings.Contains(string(out), "connected")
 }
+
+func tvVolumeUp() {
+	out, err := exec.Command("adb", "-s", ADBAddr, "shell", "input", "keyevent", "24").CombinedOutput()
+	if err != nil {
+		fmt.Printf("  TV → volume up error: %v (%s)\n", err, strings.TrimSpace(string(out)))
+		return
+	}
+	fmt.Println("  TV → volume up")
+}
+
+func tvVolumeDown() {
+	out, err := exec.Command("adb", "-s", ADBAddr, "shell", "input", "keyevent", "25").CombinedOutput()
+	if err != nil {
+		fmt.Printf("  TV → volume down error: %v (%s)\n", err, strings.TrimSpace(string(out)))
+		return
+	}
+	fmt.Println("  TV → volume down")
+}

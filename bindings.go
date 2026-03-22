@@ -77,6 +77,8 @@ var noteBindings = []noteBinding{
 	}},
 
 	// Keys
+	{KeyChannel, midiControls.KeyVolumeUp, "TV VOLUME UP", tvVolumeUp},
+	{KeyChannel, midiControls.KeyVolumeDown, "TV VOLUME DOWN", tvVolumeDown},
 	{KeyChannel, midiControls.KeyNextTrack, "NEXT TRACK", spotifyNext},
 	{KeyChannel, midiControls.KeyPrevTrack, "PREV TRACK", spotifyPrev},
 	{KeyChannel, midiControls.KeyMuteTV, "MUTE TV", func() { tvToggleMute() }},
@@ -109,8 +111,8 @@ var ccBindings = []ccBinding{
 			midiSetPadColor(midiControls.PadMushroomLamp, midiPadColorForState(on))
 		}
 	}},
-	{KnobChannel, midiControls.VolumeUp, "VOL UP", func() { spotifyAdjustVolume(10) }, nil},
-	{KnobChannel, midiControls.VolumeDown, "VOL DOWN", func() { spotifyAdjustVolume(-10) }, nil},
+	{KnobChannel, midiControls.MusicVolumeUp, "MUSIC VOL UP", func() { spotifyAdjustVolume(5) }, nil},
+	{KnobChannel, midiControls.MusicVolumeDown, "MUSIC VOL DOWN", func() { spotifyAdjustVolume(-5) }, nil},
 	{TransportChannel, midiControls.Play, "PLAY", spotifyPlay, nil},
 	{TransportChannel, midiControls.Stop, "PAUSE", spotifyPause, nil},
 }

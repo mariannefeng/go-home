@@ -49,14 +49,16 @@ var midiControls = struct {
 	PadTV               uint8
 	PadRestartServer    uint8
 
-	KeyNextTrack uint8
-	KeyPrevTrack uint8
-	KeyMuteTV    uint8
-	KeyPingPhone uint8
+	KeyNextTrack  uint8
+	KeyPrevTrack  uint8
+	KeyMuteTV     uint8
+	KeyPingPhone  uint8
+	KeyVolumeUp   uint8
+	KeyVolumeDown uint8
 
 	BrightnessMushroomLamp uint8
-	VolumeUp               uint8
-	VolumeDown             uint8
+	MusicVolumeUp          uint8
+	MusicVolumeDown        uint8
 	Play                   uint8
 	Stop                   uint8
 }{
@@ -68,14 +70,16 @@ var midiControls = struct {
 	PadTV:               51,
 	PadRestartServer:    48,
 
-	KeyNextTrack: 66,
-	KeyPrevTrack: 68,
-	KeyMuteTV:    48,
-	KeyPingPhone: 49,
+	KeyNextTrack:  66,
+	KeyPrevTrack:  68,
+	KeyMuteTV:     48,
+	KeyPingPhone:  49,
+	KeyVolumeUp:   71,
+	KeyVolumeDown: 72,
 
 	BrightnessMushroomLamp: 1,
-	VolumeUp:               105,
-	VolumeDown:             104,
+	MusicVolumeUp:          105,
+	MusicVolumeDown:        104,
 	Play:                   115,
 	Stop:                   117,
 }
