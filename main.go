@@ -37,7 +37,7 @@ func main() {
 func handleMIDI(msg midi.Message, timestampms int32) {
 	// During "red mode" (no internet), any pad press should restart the service.
 	if RedMode.Load() {
-		go restartServer()
+		go restartService()
 		return
 	}
 	// ignore input while keys are locked out (e.g. when pinging phone)
@@ -137,7 +137,7 @@ func internetConnected() bool {
 	return internetStatus() == StatusGood
 }
 
-func restartServer() {
+func restartService() {
 	fmt.Println("Restarting home controller...")
 	midiStop()
 	fmt.Println("Home controller stopped")

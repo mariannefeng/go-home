@@ -40,7 +40,7 @@ var noteBindings = []noteBinding{
 		}
 	}},
 	{PadChannel, midiControls.PadRestartServer, "RESTART SERVER", func() {
-		restartServer()
+		restartService()
 	}},
 	{PadChannel, midiControls.PadLivingRoomCamera, "TOGGLE LIVING ROOM CAMERA", func() {
 		midiSetPadPulse(midiControls.PadLivingRoomCamera, ColorPulseLoad)

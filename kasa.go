@@ -373,7 +373,7 @@ const (
 	cmdSetLightOn    = `{"smartlife.iot.smartbulb.lightingservice":{"transition_light_state":{"on_off":1}}}`
 	cmdSetLightOff   = `{"smartlife.iot.smartbulb.lightingservice":{"transition_light_state":{"on_off":0}}}`
 
-	cmdSetCameraEnableOn  = `{"smartlife.cam.ipcamera.switch":{"set_is_enable":{"value":"on"}}}`
+	cmdSetCameraEnableOn  = "{"smartlife.cam.ipcamera.switch":{"set_is_enable":{"value":"on"}}}"
 	cmdSetCameraEnableOff = `{"smartlife.cam.ipcamera.switch":{"set_is_enable":{"value":"off"}}}`
 )
 
@@ -426,6 +426,17 @@ func setLightState(ip string, on bool) error {
 	return sendKasaCommand(ip, cmd)
 }
 
+func sendKasaCommand(ip, cmd string) error {
+	conn, err := net.DialTimeout("tcp4", fmt.Sprintf("%s:9999", ip), 2*time.Second)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	_, err = conn.Write(kasa.ScrambleTCP(cmd))
+	return err
+}
+
 func setLightBrightness(ip string, brightness int) error {
 	if brightness < 1 {
 		return setLightState(ip, false)
@@ -438,17 +449,6 @@ func setLightBrightness(ip string, brightness int) error {
 		brightness,
 	)
 	return sendKasaCommand(ip, cmd)
-}
-
-func sendKasaCommand(ip, cmd string) error {
-	conn, err := net.DialTimeout("tcp4", fmt.Sprintf("%s:9999", ip), 2*time.Second)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
-	_, err = conn.Write(kasa.ScrambleTCP(cmd))
-	return err
 }
 
 func queryCameraOn(ip string) (bool, error) {
@@ -593,24 +593,4 @@ func sendKasaCamHTTPSCommand(ip, plaintextRequest string) error {
 	}
 
 	return nil
-}
-
-func sendKasaUDPCommand(ip, cmd string) error {
-	raddr, err := net.ResolveUDPAddr("udp4", fmt.Sprintf("%s:9999", ip))
-	if err != nil {
-		return err
-	}
-
-	conn, err := net.DialUDP("udp4", nil, raddr)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
-	if err := conn.SetDeadline(time.Now().Add(2 * time.Second)); err != nil {
-		return err
-	}
-
-	_, err = conn.Write(kasa.Scramble(cmd))
-	return err
 }
